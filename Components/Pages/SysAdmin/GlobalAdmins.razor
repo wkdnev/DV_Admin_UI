@@ -1,0 +1,340 @@
+@page "/sysadmin/global-admins"
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@using DV.Shared.Security
+@using DV.Admin.UI.Services
+@using Microsoft.AspNetCore.Authorization
+@inject UserService UserService
+@inject AuditService AuditService
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Global Administrator Management</PageTitle>
+
+<div class="lgreeny-dashboard">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+            <h2 style="margin: 0; color: #1e293b; font-size: 1.75rem; font-weight: 600;">🔑 Global Administrator Management</h2>
+            <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.875rem;">Manage system administrators with full access to all projects</p>
+        </div>
+        <div style="display: flex; gap: 0.75rem;">
+            <button class="lgreeny-btn-primary" style="width: auto;" @onclick="OpenAssignAdminDialog">
+                ➕ Assign Admin Role
+            </button>
+            <button class="lgreeny-btn-secondary" style="width: auto;" @onclick="GoBackToDashboard">
+                ← Back to Dashboard
+            </button>
+        </div>
+    </div>
+
+@if (isLoading)
+{
+    <div style="text-align: center; padding: 2rem;">
+        <div style="color: #3b82f6; font-size: 1.5rem;">⏳</div>
+        <p style="color: #64748b; margin-top: 0.5rem;">Loading administrators...</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.5rem; margin-bottom: 1.5rem; color: #991b1b;">
+        ⚠️ @errorMessage
+    </div>
+}
+else
+{
+    <!-- Warning Box -->
+    <div style="padding: 1rem; background: #fef3c7; border: 1px solid #fde68a; border-radius: 0.5rem; margin-bottom: 1.5rem; color: #92400e;">
+        <h6 style="margin: 0 0 0.5rem 0; color: #92400e; font-weight: 600;">⚠️ Important: Global Administrator Role</h6>
+        <p style="margin: 0; font-size: 0.875rem;">
+            The <strong>Admin</strong> role is a global system administrator role with full access to all system functions and all projects. 
+            This role should only be assigned to trusted system administrators and operates outside of project-specific access controls.
+        </p>
+    </div>
+
+    <!-- Current Admins Table -->
+    <div class="lgreeny-panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+            <h3 class="panel-title">Current Global Administrators</h3>
+        </div>
+        <div class="panel-body">
+            @if (adminUsers == null || adminUsers.Count == 0)
+            {
+                <div style="padding: 1rem; background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 0.5rem; color: #1e40af;">
+                    ℹ️ No global administrators assigned. Assign at least one admin to ensure system access.
+                </div>
+            }
+            else
+            {
+                <table class="lgreeny-table">
+                    <thead>
+                        <tr>
+                            <th>USERNAME</th>
+                            <th>DISPLAY NAME</th>
+                            <th>EMAIL</th>
+                            <th>STATUS</th>
+                            <th>ASSIGNED DATE</th>
+                            <th>ACTIONS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var user in adminUsers)
+                        {
+                            <tr>
+                                <td>
+                                    <strong style="color: #1e293b;">@user.Username</strong>
+                                </td>
+                                <td>@user.DisplayName</td>
+                                <td style="color: #64748b;">@user.Email</td>
+                                <td>
+                                    @if (user.IsActive)
+                                    {
+                                        <span style="padding: 0.25rem 0.75rem; background: #d1fae5; color: #065f46; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500;">
+                                            Active
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span style="padding: 0.25rem 0.75rem; background: #f1f5f9; color: #475569; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500;">
+                                            Inactive
+                                        </span>
+                                    }
+                                </td>
+                                <td>
+                                    <span style="font-family: 'Courier New', monospace; font-size: 0.875rem; color: #64748b;">@user.CreatedDate.ToString("MMM dd, yyyy")</span>
+                                </td>
+                                <td>
+                                    <div style="display: flex; gap: 0.5rem;">
+                                        @if (user.IsActive)
+                                        {
+                                            <button style="padding: 0.25rem 0.75rem; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 0.375rem; font-size: 0.875rem; cursor: pointer;" 
+                                                    @onclick="() => DeactivateUser(user)"
+                                                    title="Deactivate User">
+                                                ⏸
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button style="padding: 0.25rem 0.75rem; background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; border-radius: 0.375rem; font-size: 0.875rem; cursor: pointer;" 
+                                                    @onclick="() => ReactivateUser(user)"
+                                                    title="Reactivate User">
+                                                ▶
+                                            </button>
+                                        }
+                                        <button style="padding: 0.25rem 0.75rem; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 0.375rem; font-size: 0.875rem; cursor: pointer;" 
+                                                @onclick="() => RemoveAdminRole(user)"
+                                                title="Remove Admin Role">
+                                            🗑️
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+}
+</div>
+
+<!-- Assign Admin Modal -->
+@if (showAssignAdminDialog)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+        <div style="background: white; border-radius: 0.5rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); max-width: 500px; width: 90%;">
+            <div style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0;">
+                <h3 style="margin: 0; color: #1e293b; font-size: 1.25rem; font-weight: 600;">👑 Assign Global Administrator Role</h3>
+            </div>
+            <div style="padding: 1.5rem;">
+                <div style="padding: 1rem; background: #fef3c7; border: 1px solid #fde68a; border-radius: 0.5rem; margin-bottom: 1rem; color: #92400e;">
+                    <strong>⚠️ Warning:</strong> Global administrators have unrestricted access to all system functions and data.
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                        Select User to Promote to Admin
+                    </label>
+                    <select @bind="selectedUserId"
+                            style="width: 100%; padding: 0.625rem 1rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem; background: white; color: #1e293b;">
+                        <option value="">-- Select User --</option>
+                        @if (nonAdminUsers != null)
+                        {
+                            @foreach (var user in nonAdminUsers.Where(u => u.IsActive))
+                            {
+                                <option value="@user.UserId">@user.DisplayName (@user.Username)</option>
+                            }
+                        }
+                    </select>
+                </div>
+            </div>
+            <div style="padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; display: flex; gap: 0.75rem; justify-content: flex-end;">
+                <button class="lgreeny-btn-secondary" @onclick="CloseAssignAdminDialog">
+                    Cancel
+                </button>
+                <button class="lgreeny-btn-danger" @onclick="AssignAdminRole">
+                    👑 Assign Admin Role
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ApplicationUser>? adminUsers;
+    private List<ApplicationUser>? nonAdminUsers;
+    private List<ApplicationUser>? allUsers;
+    private bool isLoading = true;
+    private string? errorMessage;
+    private bool showAssignAdminDialog = false;
+    private int? selectedUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            // Get all users
+            allUsers = await UserService.GetAllUsersAsync();
+
+            // Get global admins using the new method
+            adminUsers = await UserService.GetGlobalAdminsAsync();
+            
+            // Get non-admin users using the new method
+            nonAdminUsers = await UserService.GetNonAdminUsersAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void OpenAssignAdminDialog()
+    {
+        selectedUserId = null;
+        showAssignAdminDialog = true;
+    }
+
+    private void CloseAssignAdminDialog()
+    {
+        showAssignAdminDialog = false;
+        selectedUserId = null;
+    }
+
+    private async Task AssignAdminRole()
+    {
+        if (!selectedUserId.HasValue)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Please select a user to promote to admin.");
+            return;
+        }
+
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            "Are you sure you want to assign global administrator privileges to this user? This grants unrestricted system access.");
+
+        if (confirmed)
+        {
+            try
+            {
+                await UserService.PromoteToGlobalAdminAsync(selectedUserId.Value);
+                await LoadData();
+                CloseAssignAdminDialog();
+                await JSRuntime.InvokeVoidAsync("alert", "Admin role assigned successfully!");
+            }
+            catch (Exception ex)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error assigning admin role: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task PromoteToAdmin(ApplicationUser user)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            $"Promote {user.DisplayName} to global administrator? This grants unrestricted system access.");
+
+        if (confirmed)
+        {
+            try
+            {
+                await UserService.PromoteToGlobalAdminAsync(user.UserId);
+                await LoadData();
+                await JSRuntime.InvokeVoidAsync("alert", $"{user.DisplayName} promoted to admin successfully!");
+            }
+            catch (Exception ex)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error promoting user: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task RemoveAdminRole(ApplicationUser user)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            $"Remove admin privileges from {user.DisplayName}? They will lose global administrator access.");
+
+        if (confirmed)
+        {
+            try
+            {
+                await UserService.RemoveGlobalAdminAsync(user.UserId);
+                await LoadData();
+                await JSRuntime.InvokeVoidAsync("alert", $"Admin role removed from {user.DisplayName}!");
+            }
+            catch (Exception ex)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error removing admin role: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task DeactivateUser(ApplicationUser user)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            $"Deactivate {user.DisplayName}? They will lose access to the system.");
+
+        if (confirmed)
+        {
+            try
+            {
+                await UserService.DeactivateUserAsync(user.UserId);
+                await LoadData();
+                await JSRuntime.InvokeVoidAsync("alert", $"{user.DisplayName} deactivated successfully!");
+            }
+            catch (Exception ex)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error deactivating user: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task ReactivateUser(ApplicationUser user)
+    {
+        try
+        {
+            await UserService.ReactivateUserAsync(user.UserId);
+            await LoadData();
+            await JSRuntime.InvokeVoidAsync("alert", $"{user.DisplayName} reactivated successfully!");
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error reactivating user: {ex.Message}");
+        }
+    }
+
+    private void GoBackToDashboard()
+    {
+        Navigation.NavigateTo("/sysadmin");
+    }
+}
+
+

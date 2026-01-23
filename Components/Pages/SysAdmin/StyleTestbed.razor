@@ -1,0 +1,333 @@
+@page "/sysadmin/style-testbed"
+@using Microsoft.AspNetCore.Components.Authorization
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+
+<PageTitle>Style Testbed - Cyber Terminal</PageTitle>
+
+<div class="cyber-container">
+    <!-- Header -->
+    <div class="cyber-header">
+        <div class="cyber-header-left">
+            <span class="cyber-icon">▣</span>
+            <div>
+                <h1 class="cyber-title">CYBER TERMINAL</h1>
+                <p class="cyber-subtitle">SYSTEM INTERFACE v2.0.47 // CLASSIFIED</p>
+            </div>
+        </div>
+        <div class="cyber-status">
+            <span class="status-indicator active"></span>
+            <span class="status-text">ONLINE</span>
+            <span class="cyber-time">@DateTime.Now.ToString("HH:mm:ss")</span>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="cyber-stats-grid">
+        <div class="cyber-stat-card">
+            <div class="stat-icon">⚡</div>
+            <div class="stat-value">@systemLoad%</div>
+            <div class="stat-label">SYSTEM LOAD</div>
+            <div class="stat-bar">
+                <div class="stat-bar-fill" style="width: @systemLoad%"></div>
+            </div>
+        </div>
+
+        <div class="cyber-stat-card">
+            <div class="stat-icon">◉</div>
+            <div class="stat-value">@activeConnections</div>
+            <div class="stat-label">ACTIVE NODES</div>
+            <div class="stat-bar">
+                <div class="stat-bar-fill" style="width: 75%"></div>
+            </div>
+        </div>
+
+        <div class="cyber-stat-card">
+            <div class="stat-icon">◈</div>
+            <div class="stat-value">@dataTransfer GB</div>
+            <div class="stat-label">DATA TRANSFER</div>
+            <div class="stat-bar">
+                <div class="stat-bar-fill" style="width: 45%"></div>
+            </div>
+        </div>
+
+        <div class="cyber-stat-card">
+            <div class="stat-icon">▲</div>
+            <div class="stat-value">@threatLevel</div>
+            <div class="stat-label">THREAT LEVEL</div>
+            <div class="stat-bar">
+                <div class="stat-bar-fill threat" style="width: 15%"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Two Column Layout -->
+    <div class="cyber-grid-2">
+        <!-- Terminal Window -->
+        <div class="cyber-panel">
+            <div class="panel-header">
+                <span class="panel-title">/// SYSTEM LOG</span>
+                <button class="cyber-btn-sm" @onclick="RefreshLogs">⟳ REFRESH</button>
+            </div>
+            <div class="cyber-terminal">
+                @foreach (var log in systemLogs)
+                {
+                    <div class="terminal-line">
+                        <span class="terminal-timestamp">[@log.Time]</span>
+                        <span class="terminal-text @GetLogClass(log.Type)">@log.Message</span>
+                    </div>
+                }
+                <div class="terminal-cursor">█</div>
+            </div>
+        </div>
+
+        <!-- Data Table -->
+        <div class="cyber-panel">
+            <div class="panel-header">
+                <span class="panel-title">/// ACTIVE SESSIONS</span>
+                <button class="cyber-btn-sm">+ NEW</button>
+            </div>
+            <div class="cyber-table-container">
+                <table class="cyber-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>USER</th>
+                            <th>LOCATION</th>
+                            <th>STATUS</th>
+                            <th>ACTION</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var session in sessions)
+                        {
+                            <tr>
+                                <td><span class="mono">@session.Id</span></td>
+                                <td>@session.User</td>
+                                <td>@session.Location</td>
+                                <td><span class="badge-@session.Status.ToLower()">@session.Status</span></td>
+                                <td>
+                                    <button class="cyber-action-btn">⚡</button>
+                                    <button class="cyber-action-btn danger">✕</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Widget Showcase -->
+    <div class="cyber-grid-3">
+        <!-- Alert Card -->
+        <div class="cyber-alert-card warning">
+            <div class="alert-icon">⚠</div>
+            <div class="alert-content">
+                <div class="alert-title">WARNING</div>
+                <div class="alert-message">Unusual activity detected in sector 7G</div>
+            </div>
+        </div>
+
+        <div class="cyber-alert-card success">
+            <div class="alert-icon">✓</div>
+            <div class="alert-content">
+                <div class="alert-title">SUCCESS</div>
+                <div class="alert-message">System encryption updated</div>
+            </div>
+        </div>
+
+        <div class="cyber-alert-card error">
+            <div class="alert-icon">⊗</div>
+            <div class="alert-content">
+                <div class="alert-title">CRITICAL</div>
+                <div class="alert-message">Firewall breach attempt blocked</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Control Panel -->
+    <div class="cyber-panel">
+        <div class="panel-header">
+            <span class="panel-title">/// CONTROL INTERFACE</span>
+        </div>
+        <div class="control-grid">
+            <div class="control-section">
+                <label class="cyber-label">SYSTEM MODE</label>
+                <select class="cyber-select">
+                    <option>STANDARD OPERATION</option>
+                    <option>STEALTH MODE</option>
+                    <option>LOCKDOWN</option>
+                    <option>MAINTENANCE</option>
+                </select>
+            </div>
+
+            <div class="control-section">
+                <label class="cyber-label">ENCRYPTION LEVEL</label>
+                <input type="range" class="cyber-slider" min="0" max="100" value="@encryptionLevel" @oninput="UpdateEncryption" />
+                <span class="cyber-value">@encryptionLevel%</span>
+            </div>
+
+            <div class="control-section">
+                <label class="cyber-label">SEARCH QUERY</label>
+                <div class="cyber-input-group">
+                    <input type="text" class="cyber-input" placeholder="Enter search parameters..." @bind="searchQuery" />
+                    <button class="cyber-btn">EXECUTE</button>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <label class="cyber-label">QUICK ACTIONS</label>
+                <div class="cyber-btn-group">
+                    <button class="cyber-btn">SCAN</button>
+                    <button class="cyber-btn">ANALYZE</button>
+                    <button class="cyber-btn">DEPLOY</button>
+                    <button class="cyber-btn danger">SHUTDOWN</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Cards -->
+    <div class="cyber-grid-4">
+        <div class="cyber-data-card">
+            <div class="data-header">CPU CORE 1</div>
+            <div class="data-value">47.3%</div>
+            <div class="data-graph">▁▂▃▅▄▆▅▇▆▅▄▃▂▁</div>
+        </div>
+
+        <div class="cyber-data-card">
+            <div class="data-header">CPU CORE 2</div>
+            <div class="data-value">62.8%</div>
+            <div class="data-graph">▃▄▅▆▇▆▅▄▃▅▆▇▆▅</div>
+        </div>
+
+        <div class="cyber-data-card">
+            <div class="data-header">MEMORY</div>
+            <div class="data-value">8.4 GB</div>
+            <div class="data-graph">▆▆▆▆▇▇▇▆▆▆▅▅▄▃</div>
+        </div>
+
+        <div class="cyber-data-card">
+            <div class="data-header">NETWORK</div>
+            <div class="data-value">124 Mb/s</div>
+            <div class="data-graph">▂▃▄▃▂▃▄▅▆▅▄▃▂▁</div>
+        </div>
+    </div>
+
+    <!-- Progress Indicators -->
+    <div class="cyber-panel">
+        <div class="panel-header">
+            <span class="panel-title">/// ACTIVE PROCESSES</span>
+        </div>
+        <div class="process-list">
+            <div class="process-item">
+                <div class="process-info">
+                    <span class="process-name">NEURAL_NET_ANALYSIS.exe</span>
+                    <span class="process-status">Running</span>
+                </div>
+                <div class="cyber-progress">
+                    <div class="cyber-progress-bar" style="width: 73%">73%</div>
+                </div>
+            </div>
+
+            <div class="process-item">
+                <div class="process-info">
+                    <span class="process-name">ENCRYPTION_MATRIX.sys</span>
+                    <span class="process-status">Running</span>
+                </div>
+                <div class="cyber-progress">
+                    <div class="cyber-progress-bar" style="width: 45%">45%</div>
+                </div>
+            </div>
+
+            <div class="process-item">
+                <div class="process-info">
+                    <span class="process-name">DATA_SYNC_PROTOCOL.dll</span>
+                    <span class="process-status">Queued</span>
+                </div>
+                <div class="cyber-progress">
+                    <div class="cyber-progress-bar pending" style="width: 12%">12%</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private int systemLoad = 67;
+    private int activeConnections = 24;
+    private double dataTransfer = 156.7;
+    private string threatLevel = "LOW";
+    private int encryptionLevel = 85;
+    private string searchQuery = "";
+
+    private List<SystemLog> systemLogs = new();
+    private List<SessionData> sessions = new();
+
+    protected override void OnInitialized()
+    {
+        // Initialize sample data
+        systemLogs = new List<SystemLog>
+        {
+            new SystemLog { Time = "14:23:47", Type = "INFO", Message = "> System initialization complete" },
+            new SystemLog { Time = "14:23:52", Type = "SUCCESS", Message = "> Firewall protocols engaged" },
+            new SystemLog { Time = "14:24:01", Type = "WARNING", Message = "> Unauthorized access attempt detected" },
+            new SystemLog { Time = "14:24:15", Type = "INFO", Message = "> Running security scan..." },
+            new SystemLog { Time = "14:24:28", Type = "SUCCESS", Message = "> All systems operational" },
+            new SystemLog { Time = "14:24:33", Type = "INFO", Message = "> Monitoring network traffic" },
+        };
+
+        sessions = new List<SessionData>
+        {
+            new SessionData { Id = "A1F7", User = "ADMIN_PRIME", Location = "NODE-01", Status = "ACTIVE" },
+            new SessionData { Id = "B3E9", User = "GHOST_USER", Location = "NODE-07", Status = "IDLE" },
+            new SessionData { Id = "C2D4", User = "SYS_MONITOR", Location = "NODE-03", Status = "ACTIVE" },
+            new SessionData { Id = "D8F1", User = "DATA_MINER", Location = "NODE-12", Status = "WARNING" },
+        };
+    }
+
+    private void RefreshLogs()
+    {
+        var newLog = new SystemLog
+        {
+            Time = DateTime.Now.ToString("HH:mm:ss"),
+            Type = "INFO",
+            Message = "> Log refresh requested by user"
+        };
+        systemLogs.Add(newLog);
+        if (systemLogs.Count > 10) systemLogs.RemoveAt(0);
+    }
+
+    private void UpdateEncryption(ChangeEventArgs e)
+    {
+        encryptionLevel = int.Parse(e.Value?.ToString() ?? "0");
+    }
+
+    private string GetLogClass(string type)
+    {
+        return type.ToLower() switch
+        {
+            "success" => "log-success",
+            "warning" => "log-warning",
+            "error" => "log-error",
+            _ => "log-info"
+        };
+    }
+
+    private class SystemLog
+    {
+        public string Time { get; set; } = "";
+        public string Type { get; set; } = "";
+        public string Message { get; set; } = "";
+    }
+
+    private class SessionData
+    {
+        public string Id { get; set; } = "";
+        public string User { get; set; } = "";
+        public string Location { get; set; } = "";
+        public string Status { get; set; } = "";
+    }
+}
+
+

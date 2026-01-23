@@ -1,0 +1,389 @@
+@page "/sysadmin/audit-logs"
+@page "/auditor-dashboard"
+@attribute [Authorize(Policy = "AuditorPolicy")]
+@using DV.Shared.Security
+@using DV.Admin.UI.Services
+@using Microsoft.AspNetCore.Authorization
+@inject AuditService AuditService
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+<PageTitle>Audit Logs</PageTitle>
+
+<div class="lgreeny-dashboard">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+            <h2 style="margin: 0; color: #1e293b; font-size: 1.75rem; font-weight: 600;">📊 Audit Logs</h2>
+            <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.875rem;">Monitor system activity and security events</p>
+        </div>
+        <button class="lgreeny-btn-secondary" style="width: auto;" @onclick="RefreshLogs">
+            🔄 Refresh
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div style="text-align: center; padding: 3rem;">
+            <div style="color: #3b82f6; font-size: 2rem;">⏳</div>
+            <p style="color: #64748b; margin-top: 1rem;">Loading audit logs...</p>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.5rem; color: #991b1b;">
+            <strong>⚠️ Error:</strong> @errorMessage
+        </div>
+    }
+    else
+    {
+        <!-- Statistics Cards -->
+        @if (statistics != null)
+        {
+            <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+                <div style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); border-radius: 0.5rem; padding: 1.25rem; color: white; text-align: center;">
+                    <h6 style="margin: 0 0 0.5rem 0; font-size: 0.875rem; font-weight: 500; opacity: 0.9;">Total Events</h6>
+                    <div style="font-size: 2rem; font-weight: 700;">@statistics.TotalEvents</div>
+                </div>
+                
+                <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 0.5rem; padding: 1.25rem; color: white; text-align: center;">
+                    <h6 style="margin: 0 0 0.5rem 0; font-size: 0.875rem; font-weight: 500; opacity: 0.9;">Successful</h6>
+                    <div style="font-size: 2rem; font-weight: 700;">@statistics.SuccessfulEvents</div>
+                </div>
+                
+                <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border-radius: 0.5rem; padding: 1.25rem; color: white; text-align: center;">
+                    <h6 style="margin: 0 0 0.5rem 0; font-size: 0.875rem; font-weight: 500; opacity: 0.9;">Denied</h6>
+                    <div style="font-size: 2rem; font-weight: 700;">@statistics.DeniedEvents</div>
+                </div>
+                
+                <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); border-radius: 0.5rem; padding: 1.25rem; color: white; text-align: center;">
+                    <h6 style="margin: 0 0 0.5rem 0; font-size: 0.875rem; font-weight: 500; opacity: 0.9;">Failed</h6>
+                    <div style="font-size: 2rem; font-weight: 700;">@statistics.FailedEvents</div>
+                </div>
+                
+                <div style="background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); border-radius: 0.5rem; padding: 1.25rem; color: white; text-align: center;">
+                    <h6 style="margin: 0 0 0.5rem 0; font-size: 0.875rem; font-weight: 500; opacity: 0.9;">Doc Access</h6>
+                    <div style="font-size: 2rem; font-weight: 700;">@statistics.DocumentAccessEvents</div>
+                </div>
+                
+                <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border-radius: 0.5rem; padding: 1.25rem; color: white; text-align: center;">
+                    <h6 style="margin: 0 0 0.5rem 0; font-size: 0.875rem; font-weight: 500; opacity: 0.9;">Security</h6>
+                    <div style="font-size: 2rem; font-weight: 700;">@statistics.SecurityEvents</div>
+                </div>
+            </div>
+        }
+
+        <!-- Filters -->
+        <div class="lgreeny-panel" style="margin-bottom: 1.5rem;">
+            <div class="panel-header">
+                <h3 class="panel-title">🔍 Filters</h3>
+            </div>
+            <div class="panel-body">
+                <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 1rem; margin-bottom: 1rem;">
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Date From</label>
+                        <input type="date" 
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" 
+                               @bind="fromDate" />
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Date To</label>
+                        <input type="date" 
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" 
+                               @bind="toDate" />
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Event Type</label>
+                        <select style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" 
+                                @bind="selectedEventType">
+                            <option value="">All Types</option>
+                            <option value="@AuditEventTypes.DocumentAccess">Document Access</option>
+                            <option value="@AuditEventTypes.ProjectAccess">Project Access</option>
+                            <option value="@AuditEventTypes.Authentication">Authentication</option>
+                            <option value="@AuditEventTypes.Authorization">Authorization</option>
+                            <option value="@AuditEventTypes.RoleManagement">Role Management</option>
+                            <option value="@AuditEventTypes.UserManagement">User Management</option>
+                            <option value="@AuditEventTypes.SystemAdmin">System Admin</option>
+                            <option value="@AuditEventTypes.SecurityEvent">Security Event</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Result</label>
+                        <select style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" 
+                                @bind="selectedResult">
+                            <option value="">All Results</option>
+                            <option value="@AuditResults.Success">Success</option>
+                            <option value="@AuditResults.Failed">Failed</option>
+                            <option value="@AuditResults.Denied">Denied</option>
+                            <option value="@AuditResults.Warning">Warning</option>
+                            <option value="@AuditResults.Error">Error</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Username</label>
+                        <input type="text" 
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" 
+                               @bind="usernameFilter" 
+                               placeholder="Username filter" />
+                    </div>
+                    <div style="display: flex; align-items: flex-end; gap: 0.5rem;">
+                        <button class="lgreeny-btn-primary" style="flex: 1; padding: 0.5rem;" @onclick="ApplyFilters">
+                            🔍 Apply
+                        </button>
+                        <button class="lgreeny-btn-secondary" style="flex: 1; padding: 0.5rem;" @onclick="ClearFilters">
+                            ❌ Clear
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Audit Logs Table -->
+        <div class="lgreeny-panel">
+            <div class="panel-header">
+                <h3 class="panel-title">📋 Audit Events (@auditLogs.Count results)</h3>
+            </div>
+            <div class="panel-body" style="padding: 0;">
+                @if (auditLogs.Count == 0)
+                {
+                    <div style="padding: 3rem; text-align: center; color: #94a3b8;">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">📭</div>
+                        <p style="margin: 0;">No audit logs found matching the current filters.</p>
+                    </div>
+                }
+                else
+                {
+                    <div style="max-height: 600px; overflow-y: auto;">
+                        <table class="lgreeny-table" style="margin: 0;">
+                            <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 10;">
+                                <tr>
+                                    <th style="white-space: nowrap;">Timestamp</th>
+                                    <th>Event Type</th>
+                                    <th>Action</th>
+                                    <th>Username</th>
+                                    <th>Result</th>
+                                    <th style="max-width: 300px;">Details</th>
+                                    <th>IP Address</th>
+                                    <th>Duration</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var log in auditLogs)
+                                {
+                                    <tr style="@GetRowStyle(log.Result)">
+                                        <td style="white-space: nowrap; font-size: 0.875rem; color: #64748b;">
+                                            @log.Timestamp.ToString("MM/dd HH:mm:ss")
+                                        </td>
+                                        <td>
+                                            <span style="@GetEventTypeBadgeStyle(log.EventType)">
+                                                @log.EventType
+                                            </span>
+                                        </td>
+                                        <td style="font-size: 0.875rem; color: #1e293b;">
+                                            @log.Action
+                                        </td>
+                                        <td>
+                                            <div style="font-size: 0.875rem; color: #1e293b;">@GetDisplayUsername(log.Username)</div>
+                                            @if (log.ProjectId.HasValue)
+                                            {
+                                                <span style="padding: 0.125rem 0.5rem; background: #64748b; color: white; border-radius: 0.25rem; font-size: 0.75rem; margin-right: 0.25rem;">P:@log.ProjectId</span>
+                                            }
+                                            @if (log.DocumentId.HasValue)
+                                            {
+                                                <span style="padding: 0.125rem 0.5rem; background: #3b82f6; color: white; border-radius: 0.25rem; font-size: 0.75rem;">D:@log.DocumentId</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <span style="@GetResultBadgeStyle(log.Result)">
+                                                @log.Result
+                                            </span>
+                                        </td>
+                                        <td style="max-width: 300px;">
+                                            <div style="font-size: 0.875rem; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="@log.Details">
+                                                @log.Details
+                                            </div>
+                                        </td>
+                                        <td style="font-size: 0.875rem; color: #64748b;">
+                                            @log.IpAddress
+                                        </td>
+                                        <td style="font-size: 0.875rem; color: #64748b;">
+                                            @if (log.DurationMs.HasValue)
+                                            {
+                                                <span>@log.DurationMs ms</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    <div style="padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="color: #64748b; font-size: 0.875rem;">
+                            Showing @Math.Min(auditLogs.Count, pageSize) of @auditLogs.Count results
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            @if (currentPage > 0)
+                            {
+                                <button class="lgreeny-btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.875rem;" @onclick="PreviousPage">
+                                    ← Previous
+                                </button>
+                            }
+                            @if (auditLogs.Count == pageSize)
+                            {
+                                <button class="lgreeny-btn-primary" style="padding: 0.5rem 1rem; font-size: 0.875rem;" @onclick="NextPage">
+                                    Next →
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<AuditLog> auditLogs = new();
+    private AuditStatistics? statistics;
+    private bool isLoading = true;
+    private string? errorMessage;
+
+    // Filter parameters
+    private DateTime? fromDate = DateTime.Today.AddDays(-7); // Default to last 7 days
+    private DateTime? toDate = DateTime.Today.AddDays(1);
+    private string? selectedEventType;
+    private string? selectedResult;
+    private string? usernameFilter;
+
+    // Pagination
+    private int currentPage = 0;
+    private int pageSize = 100;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAuditLogs();
+    }
+
+    private async Task LoadAuditLogs()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            // Load statistics
+            statistics = await AuditService.GetAuditStatisticsAsync(fromDate, toDate);
+
+            // Load audit logs
+            auditLogs = await AuditService.GetAuditLogsAsync(
+                fromDate: fromDate,
+                toDate: toDate,
+                username: usernameFilter,
+                eventType: selectedEventType,
+                result: selectedResult,
+                skip: currentPage * pageSize,
+                take: pageSize);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading audit logs: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RefreshLogs()
+    {
+        await LoadAuditLogs();
+    }
+
+    private async Task ApplyFilters()
+    {
+        currentPage = 0; // Reset to first page
+        await LoadAuditLogs();
+    }
+
+    private async Task ClearFilters()
+    {
+        fromDate = DateTime.Today.AddDays(-7);
+        toDate = DateTime.Today.AddDays(1);
+        selectedEventType = null;
+        selectedResult = null;
+        usernameFilter = null;
+        currentPage = 0;
+        await LoadAuditLogs();
+    }
+
+    private async Task NextPage()
+    {
+        currentPage++;
+        await LoadAuditLogs();
+    }
+
+    private async Task PreviousPage()
+    {
+        if (currentPage > 0)
+        {
+            currentPage--;
+            await LoadAuditLogs();
+        }
+    }
+
+    private string GetRowStyle(string result)
+    {
+        return result switch
+        {
+            AuditResults.Failed => "background: #fee2e2;",
+            AuditResults.Denied => "background: #fef3c7;",
+            AuditResults.Error => "background: #fee2e2;",
+            AuditResults.Warning => "background: #fef3c7;",
+            _ => ""
+        };
+    }
+
+    private string GetResultBadgeStyle(string result)
+    {
+        var styles = result switch
+        {
+            AuditResults.Success => "background: #d1fae5; color: #065f46;",
+            AuditResults.Failed => "background: #fee2e2; color: #991b1b;",
+            AuditResults.Denied => "background: #fef3c7; color: #92400e;",
+            AuditResults.Error => "background: #fee2e2; color: #991b1b;",
+            AuditResults.Warning => "background: #fef3c7; color: #92400e;",
+            _ => "background: #f1f5f9; color: #475569;"
+        };
+        
+        return $"padding: 0.25rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 500; {styles}";
+    }
+
+    private string GetEventTypeBadgeStyle(string eventType)
+    {
+        var styles = eventType switch
+        {
+            AuditEventTypes.DocumentAccess => "background: #dbeafe; color: #1e40af;",
+            AuditEventTypes.ProjectAccess => "background: #dbeafe; color: #1e40af;",
+            AuditEventTypes.Authentication => "background: #d1fae5; color: #065f46;",
+            AuditEventTypes.Authorization => "background: #fef3c7; color: #92400e;",
+            AuditEventTypes.RoleManagement => "background: #f1f5f9; color: #475569;",
+            AuditEventTypes.UserManagement => "background: #1e293b; color: white;",
+            AuditEventTypes.SystemAdmin => "background: #fee2e2; color: #991b1b;",
+            AuditEventTypes.SecurityEvent => "background: #fee2e2; color: #991b1b;",
+            _ => "background: #f8fafc; color: #1e293b;"
+        };
+        
+        return $"padding: 0.25rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 500; white-space: nowrap; {styles}";
+    }
+
+    private string GetDisplayUsername(string username)
+    {
+        if (username.Contains('\\'))
+        {
+            return username.Split('\\').Last();
+        }
+        return username;
+    }
+}
+

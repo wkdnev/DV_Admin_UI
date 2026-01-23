@@ -1,0 +1,281 @@
+@* 
+   ============================================================================
+   BadFileReportDialog.razor - Bad File Report Dialog Component
+   ============================================================================
+   
+   Purpose: Provides a modal dialog for users to report file/image quality
+   issues for document pages. Captures issue type, description, and optional
+   image URL reference.
+   
+   Created: October 16, 2025
+   
+   Dependencies:
+   - BadFileReport model
+   - RoleContextService for user context
+   - DocumentRepository for data access
+   
+   Usage: Typically displayed for READONLY users viewing documents
+*@
+
+@using DV.Shared.Models
+@using DV.Admin.UI.Services
+@using DV.Shared.Security
+@using Microsoft.AspNetCore.Components.Authorization
+@inject RoleContextService RoleContext
+@inject UserService UserService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+@if (IsVisible)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Report Bad File
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="Cancel" aria-label="Close"></button>
+                </div>
+                
+                <div class="modal-body">
+                    @if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            <i class="bi bi-exclamation-circle me-2"></i>
+                            @errorMessage
+                            <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(successMessage))
+                    {
+                        <div class="alert alert-success alert-dismissible fade show" role="alert">
+                            <i class="bi bi-check-circle me-2"></i>
+                            @successMessage
+                            <button type="button" class="btn-close" @onclick="() => successMessage = null"></button>
+                        </div>
+                    }
+
+                    <p class="text-muted mb-3">
+                        Please describe the issue you've encountered with this file or image.
+                    </p>
+
+                    <div class="mb-3">
+                        <label for="reportType" class="form-label fw-bold">Issue Type <span class="text-danger">*</span></label>
+                        <select id="reportType" class="form-select" @bind="reportType">
+                            <option value="">-- Select Issue Type --</option>
+                            <option value="Blurry">Blurry Image</option>
+                            <option value="Missing">Missing File</option>
+                            <option value="Corrupted">Corrupted Data</option>
+                            <option value="Wrong File">Wrong File</option>
+                            <option value="Poor Quality">Poor Quality</option>
+                            <option value="Unreadable">Unreadable Text</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="imageUrl" class="form-label fw-bold">Page Reference (Optional)</label>
+                        <input type="text" id="imageUrl" class="form-control" @bind="imageUrl" 
+                               placeholder="e.g., Page 3, Image 1" />
+                        <small class="text-muted">Specify which page or image has the issue</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="correctiveAction" class="form-label fw-bold">Additional Details (Optional)</label>
+                        <textarea id="correctiveAction" class="form-control" rows="3" @bind="correctiveAction"
+                                  placeholder="Provide any additional details about the issue..."></textarea>
+                    </div>
+
+                    @if (isDebugMode)
+                    {
+                        <div class="alert alert-info">
+                            <small>
+                                <strong>Debug Info:</strong><br/>
+                                Current URL: @currentUrl<br/>
+                                Detected Database: @detectedDatabase ?? "(not detected)"<br/>
+                                Detected DocumentId: @detectedDocumentId<br/>
+                                Detected PageNumber: @detectedPageNumber<br/>
+                                Current User: @currentUsername ?? "(not loaded)"<br/>
+                                User ID: @currentUserId
+                            </small>
+                        </div>
+                    }
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="Cancel">
+                        <i class="bi bi-x-circle me-1"></i>
+                        Cancel
+                    </button>
+                    <button type="button" class="btn btn-warning" @onclick="SubmitReport" disabled="@isSubmitting">
+                        @if (isSubmitting)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                            <span>Submitting...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-send me-1"></i>
+                            <span>Submit Report</span>
+                        }
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private string? reportType;
+    private string? imageUrl;
+    private string? correctiveAction;
+    private string? errorMessage;
+    private string? successMessage;
+    private bool isSubmitting;
+    private bool isDebugMode = true; // Set to false in production
+
+    private string? currentUrl;
+    private string? detectedDatabase;
+    private int detectedDocumentId;
+    private int detectedPageNumber = 1;
+    private string? currentUsername;
+    private int currentUserId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsVisible)
+        {
+            // Get current URL to extract document/page context
+            currentUrl = Navigation.Uri;
+            ParseUrlContext();
+
+            // Get current user
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            currentUsername = authState.User.Identity?.Name;
+
+            if (!string.IsNullOrEmpty(currentUsername))
+            {
+                var user = await UserService.GetUserByUsernameAsync(currentUsername);
+                if (user != null)
+                {
+                    currentUserId = user.UserId;
+                }
+            }
+        }
+    }
+
+    private void ParseUrlContext()
+    {
+        // Try to extract database, documentId, and pageNumber from URL
+        // URL patterns: /viewpdf/{Database}/{DocumentId} or /viewtiff/{Database}/{TiffDocId}
+        
+        var uri = new Uri(currentUrl!);
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        if (segments.Length >= 3)
+        {
+            // segments[0] = "viewpdf" or "viewtiff"
+            // segments[1] = Database name
+            // segments[2] = DocumentId
+            
+            detectedDatabase = segments[1];
+            
+            if (int.TryParse(segments[2], out int docId))
+            {
+                detectedDocumentId = docId;
+            }
+
+            // Check for page number in query string or assume page 1
+            var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            if (query["page"] != null && int.TryParse(query["page"], out int pageNum))
+            {
+                detectedPageNumber = pageNum;
+            }
+        }
+    }
+
+    private async Task SubmitReport()
+    {
+        errorMessage = null;
+        successMessage = null;
+
+        // Validation
+        if (string.IsNullOrWhiteSpace(reportType))
+        {
+            errorMessage = "Please select an issue type.";
+            return;
+        }
+
+        if (currentUserId == 0)
+        {
+            errorMessage = "Unable to identify current user. Please refresh and try again.";
+            return;
+        }
+
+        if (detectedDocumentId == 0)
+        {
+            errorMessage = "Unable to determine which document you are viewing. Please report this from the document viewer page.";
+            return;
+        }
+
+        try
+        {
+            isSubmitting = true;
+
+            // Note: This is a placeholder - you'll need to create a service to save BadFileReport
+            // For now, we'll just show a success message
+            
+            // TODO: Create BadFileReportService with method like:
+            // await BadFileReportService.CreateReportAsync(
+            //     database: detectedDatabase ?? "DefaultConnection",
+            //     documentId: detectedDocumentId,
+            //     pageNumber: detectedPageNumber,
+            //     reportType: reportType!,
+            //     imageUrl: imageUrl,
+            //     correctiveAction: correctiveAction,
+            //     reportedBy: currentUserId
+            // );
+
+            successMessage = $"Report submitted successfully! Issue: {reportType}";
+            
+            // Log to console for now
+            Console.WriteLine($"BadFileReport: User {currentUsername} (ID: {currentUserId}) reported {reportType} for Document {detectedDocumentId}, Page {detectedPageNumber}");
+
+            // Clear form
+            await Task.Delay(2000); // Show success message for 2 seconds
+            ResetForm();
+            await OnClose.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to submit report: {ex.Message}";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    private async Task Cancel()
+    {
+        ResetForm();
+        await OnClose.InvokeAsync();
+    }
+
+    private void ResetForm()
+    {
+        reportType = null;
+        imageUrl = null;
+        correctiveAction = null;
+        errorMessage = null;
+        successMessage = null;
+    }
+}

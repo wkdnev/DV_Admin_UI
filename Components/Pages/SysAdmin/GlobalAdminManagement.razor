@@ -1,0 +1,342 @@
+
+@page "/sysadmin/global-admin"
+
+@using DV.Shared.Security
+@using DV.Admin.UI.Services
+@using Microsoft.AspNetCore.Authorization
+
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+
+@inject UserService UserService
+@inject AuditService AuditService
+@inject IJSRuntime JSRuntime
+
+@rendermode InteractiveServer
+
+<PageTitle>Global Administrator Management</PageTitle>
+
+<div class="lgreeny-dashboard">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+            <h2 style="margin: 0; color: #1e293b; font-size: 1.75rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+                <Icon Name="key" Size="28" Color="#1e293b" /> Global Administrator Management
+            </h2>
+            <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.875rem;">Manage system-wide administrative privileges</p>
+        </div>
+        <div style="padding: 0.25rem 0.75rem; background: #dbeafe; color: #1e40af; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500;">
+            Global Admin Required
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.5rem; margin-bottom: 1.5rem; color: #991b1b;">
+            <strong>Error:</strong> @errorMessage
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(successMessage))
+    {
+        <div style="padding: 1rem; background: #d1fae5; border: 1px solid #a7f3d0; border-radius: 0.5rem; margin-bottom: 1.5rem; color: #065f46;">
+            <strong>Success:</strong> @successMessage
+        </div>
+    }
+
+    <!-- Stats Card -->
+    <div class="lgreeny-stat-card" style="margin-bottom: 1.5rem;">
+        <div class="stat-header">
+            <span class="stat-title">Current Global Administrators</span>
+            <span class="stat-icon purple"><Icon Name="shield" Size="12" Color="white" /></span>
+        </div>
+        <div class="stat-value">@globalAdmins.Count</div>
+        <div class="stat-change">
+            <span class="stat-period">System-wide Privileges</span>
+        </div>
+    </div>
+
+    <!-- Current Global Administrators Section -->
+    <div class="lgreeny-panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+            <h3 class="panel-title">Administrator List</h3>
+        </div>
+        <div class="panel-body">
+            @if (globalAdmins.Any())
+            {
+                <table class="lgreeny-table">
+                    <thead>
+                        <tr>
+                            <th>USERNAME</th>
+                            <th>DISPLAY NAME</th>
+                            <th>LAST ACTIVE</th>
+                            <th>STATUS</th>
+                            <th>ACTIONS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var admin in globalAdmins)
+                        {
+                            <tr>
+                                <td>
+                                    <strong style="color: #1e293b;">@admin.Username</strong>
+                                    @if (admin.Username == currentUsername)
+                                    {
+                                        <span style="margin-left: 0.5rem; padding: 0.125rem 0.5rem; background: #d1fae5; color: #065f46; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">YOU</span>
+                                    }
+                                </td>
+                                <td>@admin.DisplayName</td>
+                                <td style="font-family: 'Courier New', monospace; color: #64748b;">
+                                    @if (admin.LastLogin.HasValue)
+                                    {
+                                        @admin.LastLogin.Value.ToString("yyyy-MM-dd HH:mm")
+                                    }
+                                    else
+                                    {
+                                        <span style="color: #94a3b8;">Never</span>
+                                    }
+                                </td>
+                                <td>
+                                    <span style="padding: 0.25rem 0.75rem; background: #f3e8ff; color: #6b21a8; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500;">
+                                        Active
+                                    </span>
+                                </td>
+                                <td>
+                                    @if (admin.Username != currentUsername)
+                                    {
+                                        <button class="lgreeny-btn-danger"
+                                                @onclick="() => ConfirmRemoveAdmin(admin)"
+                                                disabled="@isLoading"
+                                                style="display: flex; align-items: center; gap: 0.375rem;">
+                                            <Icon Name="trash" Size="16" /> Remove Admin
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <span style="color: #94a3b8; font-size: 0.875rem;">Cannot remove yourself</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <div style="padding: 1rem; background: #fef3c7; border: 1px solid #fde68a; border-radius: 0.5rem; color: #92400e; display: flex; align-items: center; gap: 0.5rem;">
+                    <Icon Name="alert" Size="20" Color="#92400e" />
+                    <span>No global administrators found. This is a critical security issue.</span>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Add New Global Administrator Section -->
+    <div class="lgreeny-panel">
+        <div class="panel-header">
+            <h3 class="panel-title">Add New Global Administrator</h3>
+        </div>
+        <div class="panel-body">
+            <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: end;">
+                <div>
+                    <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                        Username
+                    </label>
+                    <input type="text" 
+                           @bind="newAdminUsername" 
+                           placeholder="Enter username"
+                           disabled="@isLoading"
+                           style="width: 100%; padding: 0.625rem 1rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem; transition: all 0.2s;" />
+                    <div style="margin-top: 0.25rem; color: #64748b; font-size: 0.75rem;">
+                        Enter the username of the user to promote to global administrator.
+                    </div>
+                </div>
+                <button class="lgreeny-btn-primary" 
+                        @onclick="AddGlobalAdmin"
+                        disabled="@(isLoading || string.IsNullOrWhiteSpace(newAdminUsername))"
+                        style="white-space: nowrap; display: flex; align-items: center; gap: 0.375rem;">
+                    @if (isLoading)
+                    {
+                        <Icon Name="refresh" Size="16" />
+                    }
+                    else
+                    {
+                        <Icon Name="plus" Size="16" />
+                    }
+                    Add Global Admin
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Confirmation Modal -->
+@if (adminToRemove != null)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+        <div style="background: white; border-radius: 0.5rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); max-width: 500px; width: 90%;">
+            <div style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0;">
+                <h3 style="margin: 0; color: #1e293b; font-size: 1.25rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+                    <Icon Name="alert" Size="24" Color="#f59e0b" /> Confirm Admin Removal
+                </h3>
+            </div>
+            <div style="padding: 1.5rem;">
+                <div style="padding: 1rem; background: #fef3c7; border: 1px solid #fde68a; border-radius: 0.5rem; margin-bottom: 1rem; color: #92400e;">
+                    <strong>Warning:</strong> You are about to remove global administrator privileges.
+                </div>
+                <p style="color: #475569; margin-bottom: 1rem;">
+                    Are you sure you want to remove global administrator privileges from
+                    <strong style="color: #1e293b;">@adminToRemove.Username</strong> (@adminToRemove.DisplayName)?
+                </p>
+                <p style="color: #64748b; font-size: 0.875rem; margin: 0;">
+                    This action cannot be undone and will immediately revoke all administrative access.
+                </p>
+            </div>
+            <div style="padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; display: flex; gap: 0.75rem; justify-content: flex-end;">
+                <button class="lgreeny-btn-secondary" @onclick="CancelRemoveAdmin">
+                    Cancel
+                </button>
+                <button class="lgreeny-btn-danger" @onclick="RemoveGlobalAdmin" disabled="@isLoading" style="display: flex; align-items: center; gap: 0.375rem;">
+                    @if (isLoading)
+                    {
+                        <Icon Name="refresh" Size="16" />
+                    }
+                    else
+                    {
+                        <Icon Name="trash" Size="16" />
+                    }
+                    Remove Admin Privileges
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ApplicationUser> globalAdmins = new();
+    private string newAdminUsername = string.Empty;
+    private string errorMessage = string.Empty;
+    private string successMessage = string.Empty;
+    private bool isLoading = false;
+    private ApplicationUser? adminToRemove = null;
+    private string currentUsername = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        currentUsername = await UserService.GetCurrentUsernameAsync() ?? "Unknown";
+        await LoadGlobalAdmins();
+    }
+
+    private async Task LoadGlobalAdmins()
+    {
+        try
+        {
+            isLoading = true;
+            globalAdmins = await UserService.GetGlobalAdminsAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading global administrators: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task AddGlobalAdmin()
+    {
+        if (string.IsNullOrWhiteSpace(newAdminUsername))
+            return;
+
+        try
+        {
+            isLoading = true;
+            errorMessage = string.Empty;
+            successMessage = string.Empty;
+
+            var result = await UserService.PromoteToGlobalAdminAsync(newAdminUsername.Trim());
+            
+            if (result)
+            {
+                successMessage = $"Successfully promoted {newAdminUsername} to global administrator.";
+                newAdminUsername = string.Empty;
+                await LoadGlobalAdmins();
+
+                // Log the action
+                await AuditService.LogUserManagementAsync(
+                    currentUsername,
+                    null,
+                    "PromoteToGlobalAdmin",
+                    newAdminUsername,
+                    null,
+                    "Global admin privileges granted via admin interface");
+            }
+            else
+            {
+                errorMessage = $"Failed to promote user {newAdminUsername} to global administrator. User may not exist.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error promoting user: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ConfirmRemoveAdmin(ApplicationUser admin)
+    {
+        adminToRemove = admin;
+    }
+
+    private void CancelRemoveAdmin()
+    {
+        adminToRemove = null;
+    }
+
+    private async Task RemoveGlobalAdmin()
+    {
+        if (adminToRemove == null)
+            return;
+
+        try
+        {
+            isLoading = true;
+            errorMessage = string.Empty;
+            successMessage = string.Empty;
+
+            var result = await UserService.RemoveGlobalAdminAsync(adminToRemove.Username);
+            
+            if (result)
+            {
+                successMessage = $"Successfully removed global administrator privileges from {adminToRemove.Username}.";
+                await LoadGlobalAdmins();
+
+                // Log the action
+                await AuditService.LogUserManagementAsync(
+                    currentUsername,
+                    null,
+                    "RemoveGlobalAdmin",
+                    adminToRemove.Username,
+                    null,
+                    "Global admin privileges revoked via admin interface");
+            }
+            else
+            {
+                errorMessage = $"Failed to remove global administrator privileges from {adminToRemove.Username}. User may not exist.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error removing admin privileges: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            adminToRemove = null;
+        }
+    }
+}
+
+

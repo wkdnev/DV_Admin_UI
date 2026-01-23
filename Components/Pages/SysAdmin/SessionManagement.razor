@@ -1,0 +1,448 @@
+@using DV.Shared.Security
+@using DV.Admin.UI.Services
+@inject SessionManagementService SessionManagementService
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+<div class="session-management">
+    @if (isLoading)
+    {
+        <div class="text-center my-4">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2">Loading session data...</p>
+        </div>
+    }
+    else
+    {
+        <!-- Session Statistics Dashboard -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card text-white bg-success">
+                    <div class="card-header">
+                        <i class="bi bi-people-fill me-2"></i>Active Sessions
+                    </div>
+                    <div class="card-body">
+                        <h3 class="card-title">@statistics.TotalActiveSessions</h3>
+                        <p class="card-text mb-0">Currently online</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-white bg-info">
+                    <div class="card-header">
+                        <i class="bi bi-calendar-day me-2"></i>Today's Sessions
+                    </div>
+                    <div class="card-body">
+                        <h3 class="card-title">@statistics.TotalSessionsToday</h3>
+                        <p class="card-text mb-0">@statistics.UniqueUsersToday unique users</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-white bg-warning">
+                    <div class="card-header">
+                        <i class="bi bi-clock me-2"></i>Avg Duration
+                    </div>
+                    <div class="card-body">
+                        <h3 class="card-title">@FormatDuration(statistics.AverageSessionDuration)</h3>
+                        <p class="card-text mb-0">Per session</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card text-white bg-danger">
+                    <div class="card-header">
+                        <i class="bi bi-x-circle me-2"></i>Admin Terminated
+                    </div>
+                    <div class="card-body">
+                        <h3 class="card-title">@statistics.AdminTerminatedSessions</h3>
+                        <p class="card-text mb-0">Total terminated</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Sessions Table -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="bi bi-list-ul me-2"></i>Active Sessions (@activeSessions.Count)
+                </h5>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary me-2" @onclick="RefreshData">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                    </button>
+                    <button class="btn btn-sm btn-warning" @onclick="CleanupExpiredSessions">
+                        <i class="bi bi-trash me-1"></i>Cleanup Expired
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                @if (activeSessions.Any())
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped mb-0">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>User</th>
+                                    <th>Role</th>
+                                    <th>IP Address</th>
+                                    <th>Started</th>
+                                    <th>Last Activity</th>
+                                    <th>Expires</th>
+                                    <th>Browser</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var session in activeSessions)
+                                {
+                                    <tr class="@GetSessionRowClass(session)">
+                                        <td>
+                                            <div class="d-flex align-items-center">
+                                                <span class="badge bg-secondary me-2">@session.UserId</span>
+                                                <div>
+                                                    <div class="fw-bold">@GetDisplayUsername(session.Username)</div>
+                                                    <small class="text-muted">@session.SessionKey[..8]...</small>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(session.CurrentRole))
+                                            {
+                                                <span class="badge @GetRoleBadgeClass(session.CurrentRole)">
+                                                    @session.CurrentRole
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">-</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <code class="small">@session.IpAddress</code>
+                                        </td>
+                                        <td>
+                                            <div class="small">
+                                                @session.CreatedAt.ToString("MM/dd HH:mm")
+                                                <div class="text-muted">@GetTimeAgo(session.CreatedAt) ago</div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="small">
+                                                @session.LastActivity.ToString("MM/dd HH:mm:ss")
+                                                <div class="text-muted">@GetTimeAgo(session.LastActivity) ago</div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="small">
+                                                @session.ExpiresAt.ToString("MM/dd HH:mm")
+                                                @if (session.ExpiresAt <= DateTime.UtcNow.AddMinutes(10))
+                                                {
+                                                    <div class="text-warning">
+                                                        <i class="bi bi-exclamation-triangle"></i> Expiring soon
+                                                    </div>
+                                                }
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="small text-truncate" style="max-width: 150px;" title="@session.UserAgent">
+                                                @GetBrowserInfo(session.UserAgent)
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <button class="btn btn-outline-info" @onclick="() => ViewSessionDetails(session)"
+                                                        title="View Details">
+                                                    <i class="bi bi-info-circle"></i>
+                                                </button>
+                                                <button class="btn btn-outline-danger" @onclick="() => ConfirmTerminateSession(session)"
+                                                        title="Terminate Session">
+                                                    <i class="bi bi-x-lg"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div class="text-center py-4 text-muted">
+                        <i class="bi bi-inbox display-4"></i>
+                        <p class="mt-2">No active sessions found</p>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Top Active Users (if any) -->
+        @if (statistics.TopActiveUsers.Any())
+        {
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="bi bi-trophy me-2"></i>Most Active Users Today
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        @foreach (var user in statistics.TopActiveUsers)
+                        {
+                            <div class="col-md-4 mb-2">
+                                <div class="d-flex justify-content-between align-items-center p-2 border rounded">
+                                    <div>
+                                        <strong>@GetDisplayUsername(user.Username)</strong>
+                                        <div class="small text-muted">@user.SessionCount sessions</div>
+                                    </div>
+                                    <div class="text-end">
+                                        <div class="small">Last: @user.LastActivity.ToString("HH:mm")</div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    }
+
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div class="alert alert-info mt-3">
+            @statusMessage
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger mt-3">
+            @errorMessage
+        </div>
+    }
+</div>
+
+<!-- Session Details Modal -->
+@if (selectedSession != null)
+{
+    <div class="modal fade show" style="display:block;" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Session Details - @GetDisplayUsername(selectedSession.Username)</h5>
+                    <button type="button" class="btn-close" @onclick="CloseSessionDetails"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Session Information</h6>
+                            <table class="table table-sm">
+                                <tr><td><strong>Session ID:</strong></td><td><code>@selectedSession.SessionKey</code></td></tr>
+                                <tr><td><strong>User ID:</strong></td><td>@selectedSession.UserId</td></tr>
+                                <tr><td><strong>Username:</strong></td><td>@selectedSession.Username</td></tr>
+                                <tr><td><strong>Current Role:</strong></td><td>@(selectedSession.CurrentRole ?? "None")</td></tr>
+                                <tr><td><strong>IP Address:</strong></td><td>@selectedSession.IpAddress</td></tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Timing Information</h6>
+                            <table class="table table-sm">
+                                <tr><td><strong>Created:</strong></td><td>@selectedSession.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td></tr>
+                                <tr><td><strong>Last Activity:</strong></td><td>@selectedSession.LastActivity.ToString("yyyy-MM-dd HH:mm:ss")</td></tr>
+                                <tr><td><strong>Expires:</strong></td><td>@selectedSession.ExpiresAt.ToString("yyyy-MM-dd HH:mm:ss")</td></tr>
+                                <tr><td><strong>Duration:</strong></td><td>@FormatDuration(selectedSession.LastActivity - selectedSession.CreatedAt)</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    @if (!string.IsNullOrEmpty(selectedSession.UserAgent))
+                    {
+                        <h6 class="mt-3">Browser Information</h6>
+                        <div class="alert alert-light">
+                            <small><code>@selectedSession.UserAgent</code></small>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="CloseSessionDetails">Close</button>
+                    <button type="button" class="btn btn-danger" @onclick="() => ConfirmTerminateSession(selectedSession)">
+                        <i class="bi bi-x-lg me-1"></i>Terminate Session
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop fade show"></div>
+}
+
+@code {
+    private bool isLoading = true;
+    private List<UserSession> activeSessions = new();
+    private SessionStatistics statistics = new();
+    private UserSession? selectedSession;
+    private string? statusMessage;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSessionData();
+    }
+
+    private async Task LoadSessionData()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+
+            activeSessions = await SessionManagementService.GetActiveSessionsAsync();
+            statistics = await SessionManagementService.GetSessionStatisticsAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading session data: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadSessionData();
+        statusMessage = "Session data refreshed";
+        StateHasChanged();
+        
+        // Clear status message after 3 seconds
+        await Task.Delay(3000);
+        statusMessage = null;
+        StateHasChanged();
+    }
+
+    private async Task CleanupExpiredSessions()
+    {
+        try
+        {
+            var cleanupCount = await SessionManagementService.CleanupExpiredSessionsAsync();
+            statusMessage = $"Cleaned up {cleanupCount} expired sessions";
+            await LoadSessionData();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error cleaning up sessions: {ex.Message}";
+        }
+    }
+
+    private async Task ConfirmTerminateSession(UserSession session)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            $"Are you sure you want to terminate the session for {GetDisplayUsername(session.Username)}? This will immediately log them out.");
+        
+        if (confirmed)
+        {
+            await TerminateSession(session);
+        }
+    }
+
+    private async Task TerminateSession(UserSession session)
+    {
+        try
+        {
+            var success = await SessionManagementService.TerminateSessionAsync(
+                session.SessionKey, 
+                "System Administrator", 
+                isAdminTermination: true);
+
+            if (success)
+            {
+                statusMessage = $"Session for {GetDisplayUsername(session.Username)} has been terminated";
+                await LoadSessionData();
+                CloseSessionDetails();
+            }
+            else
+            {
+                errorMessage = "Failed to terminate session";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error terminating session: {ex.Message}";
+        }
+    }
+
+    private void ViewSessionDetails(UserSession session)
+    {
+        selectedSession = session;
+    }
+
+    private void CloseSessionDetails()
+    {
+        selectedSession = null;
+    }
+
+    private string GetDisplayUsername(string username)
+    {
+        return username.Contains('\\') ? username.Split('\\')[1] : username;
+    }
+
+    private string GetSessionRowClass(UserSession session)
+    {
+        if (session.ExpiresAt <= DateTime.UtcNow.AddMinutes(5))
+            return "table-warning"; // About to expire
+        
+        if (session.LastActivity < DateTime.UtcNow.AddMinutes(-30))
+            return "table-secondary"; // Inactive
+        
+        return "";
+    }
+
+    private string GetRoleBadgeClass(string role)
+    {
+        return role.ToLower() switch
+        {
+            "sysadmin" => "bg-danger",
+            "editor" => "bg-success",
+            "auditor" => "bg-primary",
+            "dataowner" => "bg-info",
+            "security" => "bg-warning text-dark",
+            "readonly" => "bg-secondary",
+            _ => "bg-dark"
+        };
+    }
+
+    private string GetBrowserInfo(string? userAgent)
+    {
+        if (string.IsNullOrEmpty(userAgent)) return "Unknown";
+        
+        if (userAgent.Contains("Chrome")) return "Chrome";
+        if (userAgent.Contains("Firefox")) return "Firefox";
+        if (userAgent.Contains("Safari")) return "Safari";
+        if (userAgent.Contains("Edge")) return "Edge";
+        
+        return "Other";
+    }
+
+    private string GetTimeAgo(DateTime dateTime)
+    {
+        var timeSpan = DateTime.UtcNow - dateTime;
+        
+        if (timeSpan.TotalMinutes < 1) return "Just now";
+        if (timeSpan.TotalMinutes < 60) return $"{(int)timeSpan.TotalMinutes}m";
+        if (timeSpan.TotalHours < 24) return $"{(int)timeSpan.TotalHours}h";
+        
+        return $"{(int)timeSpan.TotalDays}d";
+    }
+
+    private string FormatDuration(TimeSpan duration)
+    {
+        if (duration.TotalMinutes < 1) return "< 1m";
+        if (duration.TotalHours < 1) return $"{(int)duration.TotalMinutes}m";
+        if (duration.TotalDays < 1) return $"{(int)duration.TotalHours}h {duration.Minutes}m";
+        
+        return $"{(int)duration.TotalDays}d {duration.Hours}h";
+    }
+}
+

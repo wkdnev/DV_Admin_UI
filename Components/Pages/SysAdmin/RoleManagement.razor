@@ -1,0 +1,22 @@
+@* DEPRECATED: Role management page - disabled due to migration to project-scoped roles *@
+
+@page "/sysadmin/role-management"
+@using DV.Shared.Security
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@rendermode InteractiveServer
+
+<PageTitle>Role Management (DEPRECATED)</PageTitle>
+
+<div class="container mt-4">
+    <div class="alert alert-warning">
+        <h4> Deprecated Feature</h4>
+        <p>Global role management has been replaced with project-scoped role management.</p>
+        <p>Please use the <strong>Project Role Management</strong> features instead.</p>
+        <hr>
+        <p class="mb-0">This page has been disabled as part of the migration to project-scoped roles.</p>
+    </div>
+</div>
+
+
+

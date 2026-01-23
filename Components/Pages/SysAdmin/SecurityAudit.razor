@@ -1,0 +1,435 @@
+@page "/sysadmin/security-audit"
+@page "/security-dashboard"
+@attribute [Authorize(Policy = "SecurityPolicy")]
+@using DV.Shared.Security
+@using System.Reflection
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+<PageTitle>Security Audit</PageTitle>
+
+<div class="lgreeny-dashboard">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+            <h2 style="margin: 0; color: #1e293b; font-size: 1.75rem; font-weight: 600;">🔒 Security Audit Report</h2>
+            <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.875rem;">Scan for potential security vulnerabilities in authorization configuration</p>
+        </div>
+    </div>
+    
+    <div style="padding: 1rem 1.5rem; background: #dbeafe; border: 1px solid #93c5fd; border-radius: 0.5rem; margin-bottom: 1.5rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span style="font-size: 1.5rem;">ℹ️</span>
+            <div>
+                <div style="color: #1e40af; font-weight: 600; margin-bottom: 0.25rem;">Security Audit</div>
+                <div style="color: #1e40af; font-size: 0.875rem;">This page scans for potential security vulnerabilities in the application's authorization configuration.</div>
+            </div>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div style="text-align: center; padding: 3rem;">
+            <div style="color: #3b82f6; font-size: 2rem; margin-bottom: 1rem;">⏳</div>
+            <p style="color: #64748b;">Scanning for security vulnerabilities...</p>
+        </div>
+    }
+    else
+    {
+        <!-- Summary Cards -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+            <div style="background: linear-gradient(135deg, @(protectedPages.Count > 0 ? "#10b981" : "#ef4444") 0%, @(protectedPages.Count > 0 ? "#059669" : "#dc2626") 100%); border-radius: 0.5rem; padding: 1.5rem; color: white; text-align: center;">
+                <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">@(protectedPages.Count > 0 ? "🛡️" : "⚠️")</div>
+                <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.25rem;">@protectedPages.Count</div>
+                <div style="font-size: 0.875rem; opacity: 0.9;">Protected Pages</div>
+            </div>
+            
+            <div style="background: linear-gradient(135deg, @(unprotectedPages.Count == 0 ? "#10b981" : "#ef4444") 0%, @(unprotectedPages.Count == 0 ? "#059669" : "#dc2626") 100%); border-radius: 0.5rem; padding: 1.5rem; color: white; text-align: center;">
+                <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">@(unprotectedPages.Count == 0 ? "✅" : "🚫")</div>
+                <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.25rem;">@unprotectedPages.Count</div>
+                <div style="font-size: 0.875rem; opacity: 0.9;">Unprotected Pages</div>
+            </div>
+            
+            <div style="background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); border-radius: 0.5rem; padding: 1.5rem; color: white; text-align: center;">
+                <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">👁️</div>
+                <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.25rem;">@publicPages.Count</div>
+                <div style="font-size: 0.875rem; opacity: 0.9;">Public Pages</div>
+            </div>
+            
+            <div style="background: linear-gradient(135deg, @(securityIssues.Count > 0 ? "#f59e0b" : "#10b981") 0%, @(securityIssues.Count > 0 ? "#d97706" : "#059669") 100%); border-radius: 0.5rem; padding: 1.5rem; color: white; text-align: center;">
+                <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">@(securityIssues.Count > 0 ? "⚠️" : "✅")</div>
+                <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.25rem;">@securityIssues.Count</div>
+                <div style="font-size: 0.875rem; opacity: 0.9;">Security Issues</div>
+            </div>
+        </div>
+
+        <!-- Security Issues -->
+        @if (securityIssues.Any())
+        {
+            <div class="lgreeny-panel" style="margin-bottom: 1.5rem; border: 2px solid #ef4444;">
+                <div class="panel-header" style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white;">
+                    <h3 class="panel-title" style="color: white;">⚠️ Critical Security Issues Found</h3>
+                </div>
+                <div class="panel-body">
+                    @foreach (var issue in securityIssues)
+                    {
+                        <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.5rem; margin-bottom: 1rem;">
+                            <h6 style="color: #991b1b; font-weight: 600; margin-bottom: 0.75rem;">@issue.PageName</h6>
+                            <div style="margin-bottom: 0.5rem;">
+                                <strong style="color: #991b1b;">Issue:</strong> 
+                                <span style="color: #7f1d1d;">@issue.Issue</span>
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <strong style="color: #991b1b;">Risk:</strong> 
+                                <span style="color: #7f1d1d;">@issue.Risk</span>
+                            </div>
+                            <div style="margin-bottom: 0.5rem;">
+                                <strong style="color: #991b1b;">Recommendation:</strong> 
+                                <span style="color: #7f1d1d;">@issue.Recommendation</span>
+                            </div>
+                            <div style="font-size: 0.875rem;">
+                                <strong style="color: #991b1b;">Route:</strong> 
+                                <code style="padding: 0.125rem 0.375rem; background: white; border: 1px solid #fecaca; border-radius: 0.25rem;">@issue.Route</code>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div style="padding: 1rem 1.5rem; background: #d1fae5; border: 1px solid #a7f3d0; border-radius: 0.5rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <span style="font-size: 1.5rem;">✅</span>
+                    <div>
+                        <div style="color: #065f46; font-weight: 600; margin-bottom: 0.25rem;">No Critical Security Issues Found</div>
+                        <div style="color: #065f46; font-size: 0.875rem;">All role-specific pages appear to be properly protected with authorization attributes.</div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <!-- Detailed Analysis -->
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+            <!-- Protected Pages -->
+            <div class="lgreeny-panel" style="border: 2px solid #10b981;">
+                <div class="panel-header" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;">
+                    <h3 class="panel-title" style="color: white;">🛡️ Protected Pages (@protectedPages.Count)</h3>
+                </div>
+                <div class="panel-body" style="padding: 0;">
+                    @if (protectedPages.Any())
+                    {
+                        <div style="max-height: 500px; overflow-y: auto;">
+                            <table class="lgreeny-table" style="margin: 0;">
+                                <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 10;">
+                                    <tr>
+                                        <th>Page</th>
+                                        <th>Route</th>
+                                        <th>Authorization</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var page in protectedPages)
+                                    {
+                                        <tr>
+                                            <td style="font-weight: 500; color: #1e293b;">@(page.PageName)</td>
+                                            <td>
+                                                <code style="padding: 0.125rem 0.375rem; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 0.25rem; font-size: 0.75rem;">@(page.Route)</code>
+                                            </td>
+                                            <td>
+                                                <div style="display: flex; flex-wrap: wrap; gap: 0.25rem;">
+                                                    @foreach (var auth in page.AuthorizationMethods)
+                                                    {
+                                                        <span style="padding: 0.25rem 0.5rem; background: #d1fae5; color: #065f46; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 500;">@auth</span>
+                                                    }
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="padding: 2rem; text-align: center; color: #94a3b8;">
+                            No protected pages found.
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Unprotected Pages -->
+            <div class="lgreeny-panel" style="border: 2px solid @(unprotectedPages.Count == 0 ? "#10b981" : "#f59e0b");">
+                <div class="panel-header" style="background: linear-gradient(135deg, @(unprotectedPages.Count == 0 ? "#10b981" : "#f59e0b") 0%, @(unprotectedPages.Count == 0 ? "#059669" : "#d97706") 100%); color: white;">
+                    <h3 class="panel-title" style="color: white;">@(unprotectedPages.Count == 0 ? "✅" : "⚠️") Unprotected Pages (@unprotectedPages.Count)</h3>
+                </div>
+                <div class="panel-body" style="padding: 0;">
+                    @if (unprotectedPages.Any())
+                    {
+                        <div style="max-height: 500px; overflow-y: auto;">
+                            <table class="lgreeny-table" style="margin: 0;">
+                                <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 10;">
+                                    <tr>
+                                        <th>Page</th>
+                                        <th>Route</th>
+                                        <th>Risk Level</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var page in unprotectedPages)
+                                    {
+                                        var riskLevel = GetRiskLevel(page.Route);
+                                        var riskStyle = riskLevel switch {
+                                            "HIGH" => "background: #fee2e2; color: #991b1b;",
+                                            "MEDIUM" => "background: #fef3c7; color: #92400e;",
+                                            _ => "background: #dbeafe; color: #1e40af;"
+                                        };
+                                        
+                                        <tr>
+                                            <td style="font-weight: 500; color: #1e293b;">@(page.PageName)</td>
+                                            <td>
+                                                <code style="padding: 0.125rem 0.375rem; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 0.25rem; font-size: 0.75rem;">@(page.Route)</code>
+                                            </td>
+                                            <td>
+                                                <span style="padding: 0.25rem 0.75rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 500; @riskStyle">@riskLevel</span>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="padding: 2rem; text-align: center; color: #065f46; background: #d1fae5; border-radius: 0.5rem; margin: 1rem;">
+                            ✅ All pages that should be protected have proper authorization.
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Public Pages -->
+        <div class="lgreeny-panel" style="border: 2px solid #06b6d4;">
+            <div class="panel-header" style="background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); color: white;">
+                <h3 class="panel-title" style="color: white;">👁️ Public Pages (@publicPages.Count)</h3>
+            </div>
+            <div class="panel-body">
+                @if (publicPages.Any())
+                {
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+                        @foreach (var page in publicPages)
+                        {
+                            <div style="padding: 0.75rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem;">
+                                <div style="font-weight: 500; color: #1e293b; margin-bottom: 0.25rem;">@(page.PageName)</div>
+                                <code style="display: block; padding: 0.25rem 0.5rem; background: white; border: 1px solid #e2e8f0; border-radius: 0.25rem; font-size: 0.75rem; color: #64748b;">@(page.Route)</code>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div style="padding: 2rem; text-align: center; color: #94a3b8;">
+                        No public pages found.
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool isLoading = true;
+    private List<PageSecurityInfo> protectedPages = new();
+    private List<PageSecurityInfo> unprotectedPages = new();
+    private List<PageSecurityInfo> publicPages = new();
+    private List<SecurityIssue> securityIssues = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AnalyzePageSecurity();
+    }
+
+    private async Task AnalyzePageSecurity()
+    {
+        try
+        {
+            isLoading = true;
+
+            // Get all Razor component types in the assembly
+            var assembly = Assembly.GetExecutingAssembly();
+            var componentTypes = assembly.GetTypes()
+                .Where(t => t.IsSubclassOf(typeof(ComponentBase)) && 
+                           t.Namespace?.Contains("Pages") == true)
+                .ToList();
+
+            foreach (var componentType in componentTypes)
+            {
+                var pageInfo = AnalyzeComponent(componentType);
+                if (pageInfo != null)
+                {
+                    CategorizePageSecurity(pageInfo);
+                }
+            }
+
+            // Generate security issues
+            GenerateSecurityIssues();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", "Security audit error:", ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private PageSecurityInfo? AnalyzeComponent(Type componentType)
+    {
+        try
+        {
+            // Get the @page directive
+            var pageAttribute = componentType.GetCustomAttributes<Microsoft.AspNetCore.Components.RouteAttribute>()
+                .FirstOrDefault();
+
+            if (pageAttribute == null) return null;
+
+            var pageInfo = new PageSecurityInfo
+            {
+                PageName = componentType.Name,
+                Route = pageAttribute.Template,
+                ComponentType = componentType
+            };
+
+            // Check for authorization attributes
+            var authorizeAttributes = componentType.GetCustomAttributes<AuthorizeAttribute>();
+            var roleBasedAttributes = componentType.GetCustomAttributes<RoleBasedAuthorizationAttribute>();
+
+            foreach (var attr in authorizeAttributes)
+            {
+                if (!string.IsNullOrEmpty(attr.Policy))
+                {
+                    pageInfo.AuthorizationMethods.Add($"Policy: {attr.Policy}");
+                }
+                if (!string.IsNullOrEmpty(attr.Roles))
+                {
+                    pageInfo.AuthorizationMethods.Add($"Roles: {attr.Roles}");
+                }
+                if (string.IsNullOrEmpty(attr.Policy) && string.IsNullOrEmpty(attr.Roles))
+                {
+                    pageInfo.AuthorizationMethods.Add("Require Authentication");
+                }
+            }
+
+            foreach (var attr in roleBasedAttributes)
+            {
+                pageInfo.AuthorizationMethods.Add($"RoleBasedAuth: {string.Join(", ", attr.RequiredRoles)}");
+            }
+
+            return pageInfo;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void CategorizePageSecurity(PageSecurityInfo pageInfo)
+    {
+        var route = pageInfo.Route.ToLower();
+
+        // Define public routes that don't need protection
+        var publicRoutes = new[] { "/", "/login", "/access-denied", "/error" };
+        var testRoutes = new[] { "/test/" };
+
+        if (publicRoutes.Contains(route) || testRoutes.Any(test => route.StartsWith(test)))
+        {
+            publicPages.Add(pageInfo);
+        }
+        else if (pageInfo.AuthorizationMethods.Any())
+        {
+            protectedPages.Add(pageInfo);
+        }
+        else
+        {
+            unprotectedPages.Add(pageInfo);
+        }
+    }
+
+    private void GenerateSecurityIssues()
+    {
+        foreach (var page in unprotectedPages)
+        {
+            var route = page.Route.ToLower();
+            
+            // Check for role-specific dashboards without protection
+            if (route.Contains("/dashboard") && !route.Equals("/"))
+            {
+                var roleName = ExtractRoleFromRoute(route);
+                securityIssues.Add(new SecurityIssue
+                {
+                    PageName = page.PageName,
+                    Route = page.Route,
+                    Issue = $"Role-specific dashboard lacks authorization protection",
+                    Risk = "HIGH - Any authenticated user can access this role's dashboard",
+                    Recommendation = $"Add @attribute [RoleBasedAuthorization(\"{roleName}\")] to the page"
+                });
+            }
+            // Check for admin pages without protection
+            else if (route.StartsWith("/sysadmin/"))
+            {
+                securityIssues.Add(new SecurityIssue
+                {
+                    PageName = page.PageName,
+                    Route = page.Route,
+                    Issue = "Administrative page lacks authorization protection",
+                    Risk = "CRITICAL - Any authenticated user can access admin functionality",
+                    Recommendation = "Add @attribute [RoleBasedAuthorization(\"Admin\")] or appropriate authorization attribute"
+                });
+            }
+        }
+    }
+
+    private string ExtractRoleFromRoute(string route)
+    {
+        if (route.Contains("/sysadmin")) return "sysadmin";
+        if (route.Contains("/auditor")) return "Auditor";
+        if (route.Contains("/editor")) return "Editor";
+        if (route.Contains("/dataowner")) return "DataOwner";
+        if (route.Contains("/security")) return "Security";
+        return "Unknown";
+    }
+
+    private string GetRiskLevel(string route)
+    {
+        var lowerRoute = route.ToLower();
+        
+        if (lowerRoute.StartsWith("/sysadmin/") || lowerRoute.Contains("/dashboard"))
+            return "HIGH";
+        if (lowerRoute.Contains("/manage") || lowerRoute.Contains("/edit"))
+            return "MEDIUM";
+        return "LOW";
+    }
+
+    public class PageSecurityInfo
+    {
+        public string PageName { get; set; } = string.Empty;
+        public string Route { get; set; } = string.Empty;
+        public Type? ComponentType { get; set; }
+        public List<string> AuthorizationMethods { get; set; } = new();
+    }
+
+    public class SecurityIssue
+    {
+        public string PageName { get; set; } = string.Empty;
+        public string Route { get; set; } = string.Empty;
+        public string Issue { get; set; } = string.Empty;
+        public string Risk { get; set; } = string.Empty;
+        public string Recommendation { get; set; } = string.Empty;
+    }
+}
+
+

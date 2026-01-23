@@ -1,0 +1,383 @@
+@* ============================================================================
+   RoleSelector.razor - Role Selection Component
+   ============================================================================
+   
+   Purpose: Provides a dropdown selector for users with multiple roles to
+   switch between their assigned roles. This component appears in the main
+   layout and enables role-based navigation and permission enforcement.
+   
+   Created: [Date]
+   Last Updated: [Date]
+   
+   Dependencies:
+   - DV.Admin.UI.Services.RoleContextService: For role context management
+   - DV.Shared.Security: For role models
+   - Microsoft.AspNetCore.Components.Authorization: For authentication state
+   
+   Notes:
+   - Always displays for authenticated users
+   - Shows role dropdown for multiple roles or role indicator for single role
+   - Provides debugging information when roles aren't loading
+   ============================================================================ *@
+
+@using DV.Admin.UI.Services
+@using DV.Shared.Security
+@using Microsoft.AspNetCore.Components.Authorization
+@inject RoleContextService RoleContext
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@inject AuthenticationStateProvider AuthStateProvider
+@implements IDisposable
+@rendermode InteractiveServer
+
+<!-- Always show something for authenticated users -->
+@if (isAuthenticated)
+{
+    <div class="role-selector-container">
+        @if (isLoading)
+        {
+            <!-- Loading state -->
+            <div class="d-flex align-items-center">
+                <div class="spinner-border spinner-border-sm text-light me-2" role="status"></div>
+                <small class="text-light">Loading roles...</small>
+            </div>
+        }
+        else if (RoleContext.UserRoles.Count > 1)
+        {
+            <!-- Multi-role dropdown - Always show for users with multiple roles -->
+            <div class="dropdown">
+                <button class="btn btn-outline-light btn-sm dropdown-toggle role-dropdown-btn" 
+                        type="button" 
+                        data-bs-toggle="dropdown" 
+                        aria-expanded="false"
+                        title="Switch Role (@(RoleContext.UserRoles.Count) roles available)">
+                    <i class="@GetCurrentRoleIcon() me-1"></i>
+                    <span class="d-none d-md-inline">@(RoleContext.CurrentRole?.Name ?? "Select Role")</span>
+                    <span class="d-md-none">@(RoleContext.CurrentRole?.Name ?? "Role")</span>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end role-dropdown-menu">
+                    <li class="dropdown-header">
+                        <small class="text-muted">Switch to Role (@RoleContext.UserRoles.Count available):</small>
+                    </li>
+                    @foreach (var role in RoleContext.UserRoles)
+                    {
+                        <li>
+                            <button class="dropdown-item role-option @(IsCurrentRole(role) ? "active" : "")" 
+                                    type="button"
+                                    @onclick="() => SwitchRole(role.Name)"
+                                    disabled="@IsCurrentRole(role)">
+                                <i class="@RoleContext.GetRoleIcon(role.Name) me-2 @RoleContext.GetRoleColor(role.Name)"></i>
+                                <span class="role-name">@role.Name</span>
+                                @if (IsCurrentRole(role))
+                                {
+                                    <i class="bi bi-check-circle-fill text-success ms-auto"></i>
+                                }
+                            </button>
+                        </li>
+                    }
+                    <li><hr class="dropdown-divider"></li>
+                    <li class="dropdown-header">
+                        <small class="text-muted">User: @currentUser</small>
+                    </li>
+                </ul>
+            </div>
+        }
+        else if (RoleContext.CurrentRole != null)
+        {
+            <!-- Single role indicator -->
+            <div class="single-role-indicator">
+                <span class="badge bg-secondary d-flex align-items-center">
+                    <i class="@GetCurrentRoleIcon() me-1"></i>
+                    <span class="d-none d-md-inline">@RoleContext.CurrentRole.Name</span>
+                    <span class="d-md-none">@RoleContext.CurrentRole.Name.Substring(0, Math.Min(4, RoleContext.CurrentRole.Name.Length))</span>
+                </span>
+            </div>
+        }
+        else
+        {
+            <!-- Debug/fallback state -->
+            <div class="dropdown">
+                <button class="btn btn-outline-danger btn-sm dropdown-toggle" 
+                        type="button" 
+                        data-bs-toggle="dropdown" 
+                        aria-expanded="false"
+                        title="Role Debug">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    <span class="d-none d-md-inline">No Roles</span>
+                    <span class="d-md-none">!</span>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li class="dropdown-header">
+                        <small class="text-muted">Debug Info:</small>
+                    </li>
+                    <li><span class="dropdown-item-text small">User: @currentUser</span></li>
+                    <li><span class="dropdown-item-text small">Roles: @RoleContext.UserRoles.Count</span></li>
+                    <li><span class="dropdown-item-text small">Current: @(RoleContext.CurrentRole?.Name ?? "None")</span></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <button class="dropdown-item" type="button" @onclick="RefreshRoles">
+                            <i class="bi bi-arrow-clockwise me-2"></i>
+                            Refresh Roles
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        }
+    </div>
+}
+
+<style>
+    .role-selector-container {
+        z-index: 1000;
+    }
+    
+    .role-dropdown-btn {
+        min-width: 120px;
+        text-align: left;
+    }
+    
+    .role-dropdown-menu {
+        min-width: 200px;
+    }
+    
+    .role-option {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        text-align: left;
+    }
+    
+    .role-option.active {
+        background-color: #e9ecef;
+        font-weight: bold;
+    }
+    
+    .role-option:disabled {
+        opacity: 0.8;
+        cursor: default;
+    }
+    
+    .single-role-indicator .badge {
+        font-size: 0.8rem;
+        padding: 0.5rem;
+    }
+</style>
+
+@code {
+    private bool isAuthenticated = false;
+    private bool isLoading = true;
+    private bool hasRendered = false;
+    private string currentUser = "Unknown";
+    private List<string> pendingJSCalls = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRoleSelector();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            hasRendered = true;
+            
+            // Process any pending JavaScript calls that were queued during initialization
+            if (pendingJSCalls.Any())
+            {
+                foreach (var jsCall in pendingJSCalls)
+                {
+                    try
+                    {
+                        await JSRuntime.InvokeVoidAsync("console.log", jsCall);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"RoleSelector: Error executing pending JS call: {ex.Message}");
+                    }
+                }
+                pendingJSCalls.Clear();
+            }
+        }
+    }
+
+    private async Task LoadRoleSelector()
+    {
+        try
+        {
+            isLoading = true;
+            
+            // Check authentication state
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            isAuthenticated = authState.User.Identity?.IsAuthenticated == true;
+            currentUser = authState.User.Identity?.Name ?? "Unknown";
+
+            Console.WriteLine($"RoleSelector: Authenticated: {isAuthenticated}, User: {currentUser}");
+
+            if (isAuthenticated)
+            {
+                // Initialize role context
+                var initialized = await RoleContext.InitializeAsync();
+                Console.WriteLine($"RoleSelector: Role context initialized: {initialized}");
+                Console.WriteLine($"RoleSelector: User roles count: {RoleContext.UserRoles.Count}");
+                Console.WriteLine($"RoleSelector: Current role: {RoleContext.CurrentRole?.Name ?? "None"}");
+                Console.WriteLine($"RoleSelector: Has multiple roles: {RoleContext.HasMultipleRoles}");
+
+                // Subscribe to role changes
+                RoleContext.RoleChanged += OnRoleChanged;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"RoleSelector initialization error: {ex.Message}");
+            
+            // Queue JavaScript error logging for after render
+            if (hasRendered)
+            {
+                await JSRuntime.InvokeVoidAsync("console.error", "RoleSelector initialization error:", ex.Message);
+            }
+            else
+            {
+                pendingJSCalls.Add($"RoleSelector initialization error: {ex.Message}");
+            }
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RefreshRoles()
+    {
+        await LoadRoleSelector();
+    }
+
+    private async void OnRoleChanged(object? sender, RoleChangedEventArgs e)
+    {
+        try
+        {
+            Console.WriteLine($"RoleSelector: Role changed to {e.CurrentRole.Name}");
+            
+            await InvokeAsync(() =>
+            {
+                StateHasChanged();
+            });
+
+            // Queue JavaScript calls for after render if component hasn't rendered yet
+            var logMessage = $"Switched to {e.CurrentRole.Name} role";
+            if (hasRendered)
+            {
+                await JSRuntime.InvokeVoidAsync("console.log", logMessage);
+            }
+            else
+            {
+                pendingJSCalls.Add(logMessage);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"RoleSelector: Role change error: {ex.Message}");
+            
+            var errorMessage = $"Role change error: {ex.Message}";
+            if (hasRendered)
+            {
+                await JSRuntime.InvokeVoidAsync("console.error", errorMessage);
+            }
+            else
+            {
+                pendingJSCalls.Add($"ERROR: {errorMessage}");
+            }
+        }
+    }
+
+    private async Task SwitchRole(string roleName)
+    {
+        try
+        {
+            Console.WriteLine($"RoleSelector: Attempting to switch to role {roleName}");
+            
+            if (IsCurrentRole(roleName))
+            {
+                Console.WriteLine($"RoleSelector: {roleName} is already the current role");
+                return;
+            }
+
+            var success = await RoleContext.SetActiveRoleAsync(roleName);
+            
+            if (success)
+            {
+                Console.WriteLine($"RoleSelector: Successfully switched to role {roleName}");
+                
+                // Force UI update
+                StateHasChanged();
+                
+                // Show success message - only if component has rendered
+                var successMessage = $"Role switched to {roleName}";
+                if (hasRendered)
+                {
+                    await JSRuntime.InvokeVoidAsync("console.log", successMessage);
+                    await JSRuntime.InvokeVoidAsync("eval", $"console.info('Now operating as {roleName}')");
+                }
+                else
+                {
+                    pendingJSCalls.Add(successMessage);
+                    pendingJSCalls.Add($"Now operating as {roleName}");
+                }
+            }
+            else
+            {
+                Console.WriteLine($"RoleSelector: Failed to switch to role {roleName}");
+                
+                var errorMessage = $"Failed to switch to {roleName} role.";
+                if (hasRendered)
+                {
+                    await JSRuntime.InvokeVoidAsync("alert", errorMessage);
+                }
+                else
+                {
+                    // For alerts, we'll just log them since we can't show alerts before render
+                    pendingJSCalls.Add($"ERROR: {errorMessage}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"RoleSelector: Role switch error: {ex.Message}");
+            
+            var errorMessage = "An error occurred while switching roles.";
+            if (hasRendered)
+            {
+                await JSRuntime.InvokeVoidAsync("console.error", "Role switch error:", ex.Message);
+                await JSRuntime.InvokeVoidAsync("alert", errorMessage);
+            }
+            else
+            {
+                pendingJSCalls.Add($"ERROR: Role switch error: {ex.Message}");
+            }
+        }
+    }
+
+    private bool IsCurrentRole(ApplicationRole role)
+    {
+        return RoleContext.IsCurrentRole(role.Name);
+    }
+
+    private bool IsCurrentRole(string roleName)
+    {
+        return RoleContext.IsCurrentRole(roleName);
+    }
+
+    private string GetCurrentRoleIcon()
+    {
+        if (RoleContext.CurrentRole == null) return "bi-person-circle";
+        return RoleContext.GetRoleIcon(RoleContext.CurrentRole.Name);
+    }
+
+    public void Dispose()
+    {
+        if (RoleContext != null)
+        {
+            RoleContext.RoleChanged -= OnRoleChanged;
+        }
+    }
+}

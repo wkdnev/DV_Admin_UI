@@ -1,0 +1,451 @@
+@page "/sysadmin"
+@page "/admin-dashboard"
+@attribute [Authorize(Policy = "AdminPolicy")]
+@using DV.Shared.Security
+@using DV.Admin.UI.Services
+@inject UserService UserService
+@* REMOVED: @inject PermissionService PermissionService - permissions system removed *@
+@inject ProjectRoleService ProjectRoleService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@inject Microsoft.Extensions.Hosting.IHostEnvironment HostEnvironment
+@rendermode InteractiveServer
+
+<PageTitle>Admin Dashboard - DocViewer Proto</PageTitle>
+
+<div class="lgreeny-dashboard">
+    <!-- Page Header -->
+    <div style="margin-bottom: 1.5rem;">
+        <h1 style="margin: 0; font-size: 1.75rem; font-weight: 600; color: #1e293b;">Admin Dashboard</h1>
+        <p style="margin: 0.5rem 0 0 0; font-size: 0.875rem; color: #64748b;">System administration and management console</p>
+    </div>
+
+    <!-- Quick Stats Grid -->
+    <div class="lgreeny-stats-row" style="grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); margin-bottom: 1.5rem;">
+        <div class="lgreeny-stat-card" style="padding: 0.75rem;">
+            <div class="stat-header" style="margin-bottom: 0.5rem;">
+                <span class="stat-title" style="font-size: 0.7rem;">Total Users</span>
+                <span class="stat-icon blue" style="width: 1.5rem; height: 1.5rem;"><Icon Name="users" Size="12" Color="white" /></span>
+            </div>
+            <div class="stat-value" style="font-size: 1.25rem; margin-bottom: 0.25rem;">@usersCount</div>
+            <div class="stat-change">
+                <span class="stat-period" style="font-size: 0.7rem;">System-wide</span>
+            </div>
+        </div>
+
+        <div class="lgreeny-stat-card" style="padding: 0.75rem;">
+            <div class="stat-header" style="margin-bottom: 0.5rem;">
+                <span class="stat-title" style="font-size: 0.7rem;">Global Admins</span>
+                <span class="stat-icon purple" style="width: 1.5rem; height: 1.5rem;"><Icon Name="shield" Size="12" Color="white" /></span>
+            </div>
+            <div class="stat-value" style="font-size: 1.25rem; margin-bottom: 0.25rem;">@adminUsersCount</div>
+            <div class="stat-change">
+                <span class="stat-period" style="font-size: 0.7rem;">Administrators</span>
+            </div>
+        </div>
+
+        <div class="lgreeny-stat-card" style="padding: 0.75rem;">
+            <div class="stat-header" style="margin-bottom: 0.5rem;">
+                <span class="stat-title" style="font-size: 0.7rem;">Projects</span>
+                <span class="stat-icon teal" style="width: 1.5rem; height: 1.5rem;"><Icon Name="folder" Size="12" Color="white" /></span>
+            </div>
+            <div class="stat-value" style="font-size: 1.25rem; margin-bottom: 0.25rem;">@projectCount</div>
+            <div class="stat-change">
+                <span class="stat-period" style="font-size: 0.7rem;">Active Projects</span>
+            </div>
+        </div>
+
+        <div class="lgreeny-stat-card" style="padding: 0.75rem;">
+            <div class="stat-header" style="margin-bottom: 0.5rem;">
+                <span class="stat-title" style="font-size: 0.7rem;">Project Roles</span>
+                <span class="stat-icon blue" style="width: 1.5rem; height: 1.5rem;"><Icon Name="key" Size="12" Color="white" /></span>
+            </div>
+            <div class="stat-value" style="font-size: 1.25rem; margin-bottom: 0.25rem;">@projectRolesCount</div>
+            <div class="stat-change">
+                <span class="stat-period" style="font-size: 0.7rem;">Role Assignments</span>
+            </div>
+        </div>
+
+        <div class="lgreeny-stat-card" style="padding: 0.75rem;">
+            <div class="stat-header" style="margin-bottom: 0.5rem;">
+                <span class="stat-title" style="font-size: 0.7rem;">Access Records</span>
+                <span class="stat-icon teal" style="width: 1.5rem; height: 1.5rem;"><Icon Name="clipboard" Size="12" Color="white" /></span>
+            </div>
+            <div class="stat-value" style="font-size: 1.25rem; margin-bottom: 0.25rem;">@totalAccessRecords</div>
+            <div class="stat-change">
+                <span class="stat-period" style="font-size: 0.7rem;">User-Project Access</span>
+            </div>
+        </div>
+
+        <div class="lgreeny-stat-card" style="padding: 0.75rem;">
+            <div class="stat-header" style="margin-bottom: 0.5rem;">
+                <span class="stat-title" style="font-size: 0.7rem;">System Status</span>
+                <span class="stat-icon" style="width: 1.5rem; height: 1.5rem; background: @(systemStatus == "Online" ? "#d1fae5" : "#fef3c7"); color: @(systemStatus == "Online" ? "#065f46" : "#92400e");">
+                    @if (systemStatus == "Online")
+                    {
+                        <Icon Name="check" Size="12" Color="#065f46" />
+                    }
+                    else
+                    {
+                        <Icon Name="alert" Size="12" Color="#92400e" />
+                    }
+                </span>
+            </div>
+            <div class="stat-value" style="font-size: 1.25rem; margin-bottom: 0.25rem;">@systemStatus</div>
+            <div class="stat-change">
+                <span class="stat-period" style="font-size: 0.7rem;">@systemStatusDetail</span>
+            </div>
+        </div>
+
+        <div class="lgreeny-stat-card" style="padding: 0.75rem;">
+            <div class="stat-header" style="margin-bottom: 0.5rem;">
+                <span class="stat-title" style="font-size: 0.7rem;">Environment</span>
+                <span class="stat-icon blue" style="width: 1.5rem; height: 1.5rem;"><Icon Name="settings" Size="12" Color="white" /></span>
+            </div>
+            <div class="stat-value" style="font-size: 0.9rem; margin-bottom: 0.25rem;">@environmentName</div>
+            <div class="stat-change">
+                <span class="stat-period" style="font-size: 0.7rem;">@environmentDetail</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- User & Access Management -->
+    <div class="lgreeny-panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+            <div>
+                <h3 class="panel-title" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <Icon Name="users" Size="20" />
+                    <span>User & Access Management</span>
+                </h3>
+                <p style="margin: 0.25rem 0 0 0; font-size: 0.875rem; color: #94a3b8;">Manage users, roles, and access permissions</p>
+            </div>
+        </div>
+        <div class="panel-body">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 1.25rem; cursor: pointer; transition: all 0.2s;" 
+                     @onclick="@(() => Navigation.NavigateTo("/sysadmin/users/manage"))"
+                     onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
+                     onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem;">
+                        <Icon Name="users" Size="32" Color="#3b82f6" />
+                        <span style="background: #dbeafe; color: #1e40af; padding: 0.25rem 0.625rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">@usersCount Users</span>
+                    </div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">User Management</h4>
+                    <p style="margin: 0; font-size: 0.875rem; color: #64748b;">Manage users, roles, and permissions</p>
+                </div>
+
+                <AuthorizeView Policy="GlobalAdminPolicy">
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 1.25rem; cursor: pointer; transition: all 0.2s;" 
+                     @onclick="@(() => Navigation.NavigateTo("/sysadmin/global-admins"))"
+                     onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
+                     onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem;">
+                        <Icon Name="shield" Size="32" Color="#8b5cf6" />
+                        <span style="background: #ede9fe; color: #6b21a8; padding: 0.25rem 0.625rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">@adminUsersCount Admins</span>
+                    </div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">Global Admins</h4>
+                    <p style="margin: 0; font-size: 0.875rem; color: #64748b;">System administrators with full access</p>
+                </div>
+                </AuthorizeView>
+
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 1.25rem; cursor: pointer; transition: all 0.2s;" 
+                     @onclick="@(() => Navigation.NavigateTo("/sysadmin/project-roles"))"
+                     onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
+                     onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem;">
+                        <Icon Name="key" Size="32" Color="#14b8a6" />
+                        <span style="background: #ccfbf1; color: #115e59; padding: 0.25rem 0.625rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">@projectRolesCount Roles</span>
+                    </div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">Project Roles</h4>
+                    <p style="margin: 0; font-size: 0.875rem; color: #64748b;">Project-specific role assignments</p>
+                </div>
+
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 1.25rem; cursor: pointer; transition: all 0.2s;" 
+                     @onclick="@(() => Navigation.NavigateTo("/sysadmin/user-project-access"))"
+                     onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
+                     onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem;">
+                        <Icon Name="lock" Size="32" Color="#3b82f6" />
+                        <span style="background: #dbeafe; color: #1e40af; padding: 0.25rem 0.625rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">@totalAccessRecords Records</span>
+                    </div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">User Project Access</h4>
+                    <p style="margin: 0; font-size: 0.875rem; color: #64748b;">Control project access authorization</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Configuration -->
+    <div class="lgreeny-panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+            <div>
+                <h3 class="panel-title" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <Icon Name="settings" Size="20" />
+                    <span>System Configuration</span>
+                </h3>
+                <p style="margin: 0.25rem 0 0 0; font-size: 0.875rem; color: #94a3b8;">Configure projects and permissions</p>
+            </div>
+        </div>
+        <div class="panel-body">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 1.25rem; cursor: pointer; transition: all 0.2s;" 
+                     @onclick="@(() => Navigation.NavigateTo("/sysadmin/projects"))"
+                     onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
+                     onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem;">
+                        <Icon Name="folder" Size="32" Color="#3b82f6" />
+                        <span style="background: #dbeafe; color: #1e40af; padding: 0.25rem 0.625rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">@projectCount Projects</span>
+                    </div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">Projects</h4>
+                    <p style="margin: 0; font-size: 0.875rem; color: #64748b;">Manage projects (databases/containers)</p>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Management -->
+    <div class="lgreeny-panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+            <div>
+                <h3 class="panel-title" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <Icon Name="database" Size="20" />
+                    <span>Data Management</span>
+                </h3>
+                <p style="margin: 0.25rem 0 0 0; font-size: 0.875rem; color: #94a3b8;">Import, export, and manage data</p>
+            </div>
+        </div>
+        <div class="panel-body">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 1.25rem; cursor: pointer; transition: all 0.2s;" 
+                     @onclick="@(() => Navigation.NavigateTo("/sysadmin/document-import"))"
+                     onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
+                     onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                    <div style="margin-bottom: 0.75rem;">
+                        <Icon Name="cloud" Size="32" Color="#3b82f6" />
+                    </div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">Import Files</h4>
+                    <p style="margin: 0; font-size: 0.875rem; color: #64748b;">Import documents or metadata</p>
+                </div>
+
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 1.25rem; cursor: pointer; transition: all 0.2s;" 
+                     @onclick="@(() => Navigation.NavigateTo("/sysadmin/session-management"))"
+                     onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
+                     onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                    <div style="margin-bottom: 0.75rem;">
+                        <Icon Name="power" Size="32" Color="#8b5cf6" />
+                    </div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">Session Management</h4>
+                    <p style="margin: 0; font-size: 0.875rem; color: #64748b;">Monitor and manage active sessions</p>
+                </div>
+
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 1.25rem; cursor: pointer; transition: all 0.2s;" 
+                     @onclick="@(() => Navigation.NavigateTo("/sysadmin/reports"))"
+                     onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
+                     onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                    <div style="margin-bottom: 0.75rem;">
+                        <Icon Name="clipboard" Size="32" Color="#14b8a6" />
+                    </div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">Reports</h4>
+                    <p style="margin: 0; font-size: 0.875rem; color: #64748b;">Generate audit and activity reports</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Monitoring & Audit -->
+    <div class="lgreeny-panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+            <div>
+                <h3 class="panel-title" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <Icon Name="eye" Size="20" />
+                    <span>Monitoring & Audit</span>
+                </h3>
+                <p style="margin: 0.25rem 0 0 0; font-size: 0.875rem; color: #94a3b8;">Track activities and ensure security</p>
+            </div>
+        </div>
+        <div class="panel-body">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 1.25rem; cursor: pointer; transition: all 0.2s;" 
+                     @onclick="@(() => Navigation.NavigateTo("/sysadmin/audit-logs"))"
+                     onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
+                     onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                    <div style="margin-bottom: 0.75rem;">
+                        <Icon Name="clipboard" Size="32" Color="#3b82f6" />
+                    </div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">Audit Logs</h4>
+                    <p style="margin: 0; font-size: 0.875rem; color: #64748b;">Comprehensive audit trails</p>
+                </div>
+
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 1.25rem; cursor: pointer; transition: all 0.2s;" 
+                     @onclick="@(() => Navigation.NavigateTo("/sysadmin/diagnostics"))"
+                     onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
+                     onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                    <div style="margin-bottom: 0.75rem;">
+                        <Icon Name="tool" Size="32" Color="#8b5cf6" />
+                    </div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">System Diagnostics</h4>
+                    <p style="margin: 0; font-size: 0.875rem; color: #64748b;">Database updates and health checks</p>
+                </div>
+
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 1.25rem; cursor: pointer; transition: all 0.2s;" 
+                     @onclick="@(() => Navigation.NavigateTo("/sysadmin/security-audit"))"
+                     onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
+                     onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                    <div style="margin-bottom: 0.75rem;">
+                        <Icon Name="shield" Size="32" Color="#14b8a6" />
+                    </div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">Security Audit</h4>
+                    <p style="margin: 0; font-size: 0.875rem; color: #64748b;">Scan for security vulnerabilities</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private int usersCount;
+    private int projectRolesCount;
+    private int adminUsersCount;
+    private int totalAccessRecords;
+    private int projectCount;
+    
+    private string systemStatus = "Online";
+    private string systemStatusDetail = "All Services Running";
+    private string environmentName = "";
+    private string environmentDetail = "";
+    
+    private string? initializationError;
+    #pragma warning disable CS0414 // Field is assigned but its value is never used - reserved for future loading state UI
+    private bool isLoading = true;
+    #pragma warning restore CS0414
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Set environment information
+            environmentName = HostEnvironment.EnvironmentName;
+            environmentDetail = HostEnvironment.IsDevelopment() ? "Development Mode" : 
+                               HostEnvironment.IsProduction() ? "Production Mode" : 
+                               HostEnvironment.IsStaging() ? "Staging Mode" : "Unknown";
+            
+            var users = await UserService.GetAllUsersAsync();
+            usersCount = users?.Count ?? 0;
+
+            // Load project role statistics
+            await LoadProjectRoleStatistics();
+            
+            // Load admin user statistics
+            await LoadAdminUserStatistics();
+            
+            // Load user project access statistics
+            await LoadUserProjectAccessStatistics();
+
+            // Load project count
+            await LoadProjectCount();
+            
+            // Update system status based on successful data load
+            systemStatus = "Online";
+            systemStatusDetail = "All Services Running";
+        }
+        catch (Exception ex)
+        {
+            // keep page usable even if counts fail
+            usersCount = projectRolesCount = adminUsersCount = totalAccessRecords = projectCount = 0;
+            systemStatus = "Warning";
+            systemStatusDetail = "Some Services Unavailable";
+            
+            // Store error for logging in OnAfterRenderAsync
+            initializationError = $"AdminDashboard load error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Log any initialization errors to console now that JavaScript is available
+            if (!string.IsNullOrEmpty(initializationError))
+            {
+                await JSRuntime.InvokeVoidAsync("console.error", initializationError);
+            }
+        }
+    }
+
+    private async Task LoadProjectRoleStatistics()
+    {
+        try
+        {
+            // Get all project roles across all projects
+            var allProjects = await ProjectRoleService.GetAllProjectsAsync();
+            var totalProjectRoles = 0;
+
+            foreach (var project in allProjects)
+            {
+                var projectRoles = await ProjectRoleService.GetProjectRolesAsync(project.ProjectId);
+                totalProjectRoles += projectRoles.Count;
+            }
+
+            projectRolesCount = totalProjectRoles;
+        }
+        catch (Exception ex)
+        {
+            projectRolesCount = 0;
+            
+            // Store error instead of immediate JavaScript logging
+            if (string.IsNullOrEmpty(initializationError))
+                initializationError = $"Error loading project role statistics: {ex.Message}";
+        }
+    }
+
+    private async Task LoadAdminUserStatistics()
+    {
+        try
+        {
+            // Get global administrators using the new method
+            var globalAdmins = await UserService.GetGlobalAdminsAsync();
+            adminUsersCount = globalAdmins.Count;
+        }
+        catch (Exception ex)
+        {
+            adminUsersCount = 0;
+            
+            // Store error instead of immediate JavaScript logging
+            if (string.IsNullOrEmpty(initializationError))
+                initializationError = $"Error loading admin user statistics: {ex.Message}";
+        }
+    }
+
+    private async Task LoadUserProjectAccessStatistics()
+    {
+        // Feature removed.
+        totalAccessRecords = 0;
+        await Task.CompletedTask;
+    }
+
+    private async Task LoadProjectCount()
+    {
+        try
+        {
+            var allProjects = await ProjectRoleService.GetAllProjectsAsync();
+            projectCount = allProjects.Count;
+        }
+        catch (Exception ex)
+        {
+            projectCount = 0;
+            
+            // Store error instead of immediate JavaScript logging
+            if (string.IsNullOrEmpty(initializationError))
+                initializationError = $"Error loading project count: {ex.Message}";
+        }
+    }
+}
+
+
+

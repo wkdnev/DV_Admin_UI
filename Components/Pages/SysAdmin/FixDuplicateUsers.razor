@@ -1,0 +1,221 @@
+@page "/sysadmin/fix-duplicate-users"
+@using DV.Admin.UI.Services
+@using DV.Shared.Security
+@using Microsoft.AspNetCore.Authorization
+@inject UserService UserService
+@inject IJSRuntime JSRuntime
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@rendermode InteractiveServer
+
+<PageTitle>Fix Duplicate Users</PageTitle>
+
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header bg-warning text-dark">
+            <h4 class="mb-0">Fix Duplicate User Issue</h4>
+            <small>This utility helps fix the duplicate user issue caused by domain username normalization</small>
+        </div>
+        <div class="card-body">
+            @if (isLoading)
+            {
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2">Analyzing users...</p>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-info">
+                    <h6>Issue Description:</h6>
+                    <p>Some users may have been created twice - once with the domain prefix (e.g., "AD\neil.rainsforth") and once without (e.g., "neil.rainsforth"). This utility helps consolidate them.</p>
+                </div>
+
+                @if (duplicateGroups.Any())
+                {
+                    <h5>Potential Duplicate Users Found:</h5>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Username</th>
+                                    <th>User ID</th>
+                                    <th>Roles Count</th>
+                                    <th>Created Date</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var group in duplicateGroups)
+                                {
+                                    <tr><td colspan="5" class="fw-bold bg-light">Duplicate Group: @group.Key</td></tr>
+                                    @foreach (var user in group.OrderBy(u => u.CreatedDate))
+                                    {
+                                        <tr class="@(user == group.OrderBy(u => u.CreatedDate).First() ? "table-success" : "table-warning")">
+                                            <td>@user.Username</td>
+                                            <td>@user.UserId</td>
+                                            <td>@(userRolesMap.TryGetValue(user.UserId, out var roles) ? roles.Count : 0)</td>
+                                            <td>@user.CreatedDate.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                            <td>
+                                                @if (user == group.OrderBy(u => u.CreatedDate).First())
+                                                {
+                                                    <span class="badge bg-success">Keep (Original)</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-warning">Will be merged & removed</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="mt-4">
+                        <button class="btn btn-warning me-2" @onclick="FixAllDuplicates" disabled="@isFixing">
+                            @if (isFixing)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                            }
+                            <i class="bi bi-tools me-1"></i>
+                            Fix All Duplicate Users
+                        </button>
+                        <button class="btn btn-secondary" @onclick="RefreshAnalysis">
+                            <i class="bi bi-arrow-clockwise me-1"></i>
+                            Refresh Analysis
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-success">
+                        <h6>No Duplicate Users Found!</h6>
+                        <p>All users appear to be unique. No action needed.</p>
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(statusMessage))
+                {
+                    <div class="alert alert-info mt-3">
+                        <strong>Status:</strong> @statusMessage
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="alert alert-danger mt-3">
+                        <strong>Error:</strong> @errorMessage
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isLoading = true;
+    private bool isFixing = false;
+    private List<IGrouping<string, ApplicationUser>> duplicateGroups = new();
+    private Dictionary<int, List<ApplicationRole>> userRolesMap = new();
+    private string? statusMessage;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await AnalyzeUsers();
+    }
+
+    private async Task AnalyzeUsers()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+            statusMessage = null;
+
+            // Get all users
+            var allUsers = await UserService.GetAllUsersAsync();
+            
+            // Load roles for each user
+            userRolesMap.Clear();
+            foreach (var user in allUsers)
+            {
+                var roles = await UserService.GetUserRolesAsync(user.UserId);
+                userRolesMap[user.UserId] = roles;
+            }
+
+            // Group users by their normalized usernames to find duplicates
+            var groupedUsers = allUsers
+                .GroupBy(u => NormalizeUsername(u.Username), StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            duplicateGroups = groupedUsers;
+
+            if (duplicateGroups.Any())
+            {
+                statusMessage = $"Found {duplicateGroups.Count} groups of duplicate users.";
+            }
+            else
+            {
+                statusMessage = "No duplicate users found.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error analyzing users: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task FixAllDuplicates()
+    {
+        try
+        {
+            var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+                $"This will consolidate {duplicateGroups.Count} groups of duplicate users. " +
+                "Roles will be merged to the original user and duplicates will be removed. Continue?");
+                
+            if (!confirmed) return;
+
+            isFixing = true;
+            statusMessage = "Fixing duplicate users...";
+            StateHasChanged();
+
+            foreach (var group in duplicateGroups)
+            {
+                var originalUser = group.OrderBy(u => u.CreatedDate).First();
+                await UserService.ConsolidateDuplicateUsersAsync(originalUser.Username);
+            }
+
+            statusMessage = "All duplicate users have been consolidated successfully!";
+            await AnalyzeUsers(); // Refresh the analysis
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error fixing duplicates: {ex.Message}";
+        }
+        finally
+        {
+            isFixing = false;
+        }
+    }
+
+    private async Task RefreshAnalysis()
+    {
+        await AnalyzeUsers();
+    }
+
+    private string NormalizeUsername(string username)
+    {
+        if (string.IsNullOrWhiteSpace(username)) return string.Empty;
+        if (username.Contains('\\')) return username.Split('\\')[1];
+        return username;
+    }
+}
+
+

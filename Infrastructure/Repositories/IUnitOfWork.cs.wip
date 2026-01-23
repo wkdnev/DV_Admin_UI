@@ -1,0 +1,67 @@
+// ============================================================================
+// IUnitOfWork.cs - Unit of Work Pattern Interface
+// ============================================================================
+//
+// Purpose: Defines the contract for the Unit of Work pattern to coordinate
+// multiple repository operations within a single transaction context.
+//
+// Features:
+// - Repository access coordination
+// - Transaction management
+// - Bulk save operations
+// - Rollback capabilities
+//
+// ============================================================================
+
+namespace DocViewer_Proto.Infrastructure.Repositories;
+
+/// <summary>
+/// Unit of Work interface for coordinating repository operations
+/// </summary>
+public interface IUnitOfWork : IDisposable
+{
+    /// <summary>
+    /// Gets the user repository
+    /// </summary>
+    IUserRepository Users { get; }
+    
+    /// <summary>
+    /// Gets the document repository
+    /// </summary>
+    IDocumentRepository Documents { get; }
+    
+    /// <summary>
+    /// Gets a generic repository for the specified entity type
+    /// </summary>
+    IRepository<TEntity> GetRepository<TEntity>() where TEntity : class;
+    
+    /// <summary>
+    /// Begins a new transaction
+    /// </summary>
+    Task BeginTransactionAsync(CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Commits the current transaction and saves all changes
+    /// </summary>
+    Task CommitAsync(CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Rolls back the current transaction
+    /// </summary>
+    Task RollbackAsync(CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Saves all pending changes without committing transaction
+    /// </summary>
+    Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Executes multiple operations within a transaction
+    /// </summary>
+    Task ExecuteInTransactionAsync(Func<Task> operation, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Executes multiple operations within a transaction with return value
+    /// </summary>
+    Task<TResult> ExecuteInTransactionAsync<TResult>(Func<Task<TResult>> operation, CancellationToken cancellationToken = default);
+}

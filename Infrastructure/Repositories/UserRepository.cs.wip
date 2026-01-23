@@ -1,0 +1,274 @@
+// ============================================================================
+// UserRepository.cs - User Repository Implementation
+// ============================================================================
+//
+// Purpose: Provides specialized data access operations for ApplicationUser
+// entities, extending the base repository with user-specific queries.
+//
+// Features:
+// - User-specific query methods
+// - Role-based filtering
+// - Project access queries
+// - Session management queries
+//
+// ============================================================================
+
+using DocViewer_Proto.Security;
+using DocViewer_Proto.Models;
+using DocViewer_Proto.Infrastructure.Repositories;
+using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
+
+namespace DocViewer_Proto.Infrastructure.Repositories;
+
+/// <summary>
+/// Repository interface for ApplicationUser entities
+/// </summary>
+public interface IUserRepository : IRepository<ApplicationUser, string>
+{
+    /// <summary>
+    /// Finds a user by username
+    /// </summary>
+    Task<ApplicationUser?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets users with their project roles
+    /// </summary>
+    Task<IEnumerable<ApplicationUser>> GetUsersWithProjectRolesAsync(CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets users by project ID
+    /// </summary>
+    Task<IEnumerable<ApplicationUser>> GetUsersByProjectIdAsync(int projectId, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets users by role
+    /// </summary>
+    Task<IEnumerable<ApplicationUser>> GetUsersByRoleAsync(string roleName, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Checks if user has access to project
+    /// </summary>
+    Task<bool> HasProjectAccessAsync(string userId, int projectId, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets active sessions for user
+    /// </summary>
+    Task<IEnumerable<UserSession>> GetActiveSessionsAsync(string userId, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Search users by display name or username
+    /// </summary>
+    Task<IEnumerable<ApplicationUser>> SearchUsersAsync(string searchTerm, int maxResults = 50, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// User repository implementation
+/// </summary>
+public class UserRepository : RepositoryBase<ApplicationUser, string, SecurityDbContext>, IUserRepository
+{
+    public UserRepository(SecurityDbContext context, ILogger<UserRepository> logger)
+        : base(context, logger)
+    {
+    }
+
+    public async Task<ApplicationUser?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var user = await DbSet
+                .FirstOrDefaultAsync(u => u.UserName == username, cancellationToken);
+            
+            Logger.LogDebug("Retrieved user by username {Username}: {Found}", username, user != null ? "Found" : "Not Found");
+            return user;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error retrieving user by username {Username}", username);
+            throw;
+        }
+    }
+
+    public async Task<IEnumerable<ApplicationUser>> GetUsersWithProjectRolesAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var users = await DbSet
+                .Include(u => u.UserProjectRoles)
+                    .ThenInclude(upr => upr.ProjectRole)
+                        .ThenInclude(pr => pr.Project)
+                .Include(u => u.UserProjectRoles)
+                    .ThenInclude(upr => upr.ProjectRole)
+                        .ThenInclude(pr => pr.ApplicationRole)
+                .ToListAsync(cancellationToken);
+
+            Logger.LogDebug("Retrieved {Count} users with project roles", users.Count);
+            return users;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error retrieving users with project roles");
+            throw;
+        }
+    }
+
+    public async Task<IEnumerable<ApplicationUser>> GetUsersByProjectIdAsync(int projectId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var users = await DbSet
+                .Where(u => u.UserProjectRoles.Any(upr => upr.ProjectRole.ProjectId == projectId))
+                .Include(u => u.UserProjectRoles.Where(upr => upr.ProjectRole.ProjectId == projectId))
+                    .ThenInclude(upr => upr.ProjectRole)
+                        .ThenInclude(pr => pr.ApplicationRole)
+                .ToListAsync(cancellationToken);
+
+            Logger.LogDebug("Retrieved {Count} users for project {ProjectId}", users.Count, projectId);
+            return users;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error retrieving users for project {ProjectId}", projectId);
+            throw;
+        }
+    }
+
+    public async Task<IEnumerable<ApplicationUser>> GetUsersByRoleAsync(string roleName, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var users = await DbSet
+                .Where(u => u.UserProjectRoles.Any(upr => upr.ProjectRole.ApplicationRole.Name == roleName))
+                .Include(u => u.UserProjectRoles)
+                    .ThenInclude(upr => upr.ProjectRole)
+                        .ThenInclude(pr => pr.ApplicationRole)
+                .ToListAsync(cancellationToken);
+
+            Logger.LogDebug("Retrieved {Count} users with role {RoleName}", users.Count, roleName);
+            return users;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error retrieving users by role {RoleName}", roleName);
+            throw;
+        }
+    }
+
+    public async Task<bool> HasProjectAccessAsync(string userId, int projectId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var hasAccess = await DbSet
+                .AnyAsync(u => u.Id == userId && 
+                              u.UserProjectRoles.Any(upr => upr.ProjectRole.ProjectId == projectId), 
+                         cancellationToken);
+
+            Logger.LogDebug("User {UserId} access to project {ProjectId}: {HasAccess}", userId, projectId, hasAccess);
+            return hasAccess;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error checking project access for user {UserId} and project {ProjectId}", userId, projectId);
+            throw;
+        }
+    }
+
+    public async Task<IEnumerable<UserSession>> GetActiveSessionsAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var activeSessions = await Context.UserSessions
+                .Where(s => s.UserId == userId && s.IsActive && s.ExpiresAt > DateTime.UtcNow)
+                .OrderByDescending(s => s.LastActivity)
+                .ToListAsync(cancellationToken);
+
+            Logger.LogDebug("Retrieved {Count} active sessions for user {UserId}", activeSessions.Count, userId);
+            return activeSessions;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error retrieving active sessions for user {UserId}", userId);
+            throw;
+        }
+    }
+
+    public async Task<IEnumerable<ApplicationUser>> SearchUsersAsync(string searchTerm, int maxResults = 50, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(searchTerm))
+                return Enumerable.Empty<ApplicationUser>();
+
+            var normalizedSearchTerm = searchTerm.ToLowerInvariant();
+
+            var users = await DbSet
+                .Where(u => u.UserName!.ToLower().Contains(normalizedSearchTerm) ||
+                           u.DisplayName!.ToLower().Contains(normalizedSearchTerm))
+                .Take(maxResults)
+                .ToListAsync(cancellationToken);
+
+            Logger.LogDebug("Search for '{SearchTerm}' returned {Count} users", searchTerm, users.Count);
+            return users;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error searching users with term '{SearchTerm}'", searchTerm);
+            throw;
+        }
+    }
+
+    // ========================================================================
+    // Additional Helper Methods
+    // ========================================================================
+
+    /// <summary>
+    /// Gets users with specific permission
+    /// </summary>
+    public async Task<IEnumerable<ApplicationUser>> GetUsersWithPermissionAsync(string permissionName, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var users = await DbSet
+                .Where(u => u.UserProjectRoles.Any(upr => 
+                    upr.ProjectRole.ApplicationRole.RolePermissions
+                        .Any(rp => rp.Permission.Name == permissionName)))
+                .Include(u => u.UserProjectRoles)
+                    .ThenInclude(upr => upr.ProjectRole)
+                        .ThenInclude(pr => pr.ApplicationRole)
+                            .ThenInclude(ar => ar.RolePermissions)
+                                .ThenInclude(rp => rp.Permission)
+                .ToListAsync(cancellationToken);
+
+            Logger.LogDebug("Retrieved {Count} users with permission {PermissionName}", users.Count, permissionName);
+            return users;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error retrieving users with permission {PermissionName}", permissionName);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Gets user's project access with roles
+    /// </summary>
+    public async Task<IEnumerable<UserProjectAccess>> GetUserProjectAccessAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var projectAccess = await Context.UserProjectAccess
+                .Where(upa => upa.UserId == userId)
+                .Include(upa => upa.Project)
+                .Include(upa => upa.User)
+                .ToListAsync(cancellationToken);
+
+            Logger.LogDebug("Retrieved {Count} project access records for user {UserId}", projectAccess.Count, userId);
+            return projectAccess;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error retrieving project access for user {UserId}", userId);
+            throw;
+        }
+    }
+}

@@ -1,0 +1,173 @@
+@* ============================================================================
+   LoginLayout.razor - Minimal Layout for Login Pages
+   ============================================================================
+   
+   Purpose: Provides a clean, minimal layout for authentication pages
+   without the main navigation sidebar that requires authentication.
+   ============================================================================ *@
+
+@inherits LayoutComponentBase
+
+<div class="login-page-wrapper">
+    <main class="login-main">
+        @Body
+    </main>
+</div>
+
+<style>
+    .login-page-wrapper {
+        min-height: 100vh;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    }
+
+    .login-main {
+        width: 100%;
+        max-width: 500px;
+    }
+
+    .login-container {
+        width: 100%;
+    }
+
+    .login-card {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        padding: 40px;
+    }
+
+    .login-header {
+        text-align: center;
+        margin-bottom: 30px;
+    }
+
+    .login-icon {
+        font-size: 4rem;
+        color: #667eea;
+        margin-bottom: 15px;
+        display: block;
+    }
+
+    .login-header h2 {
+        margin-bottom: 5px;
+        color: #333;
+    }
+
+    .login-options {
+        margin-bottom: 20px;
+    }
+
+    .login-option-section {
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 12px;
+        margin-bottom: 15px;
+    }
+
+    .section-title {
+        color: #333;
+        margin-bottom: 8px;
+        font-size: 1.1rem;
+    }
+
+    .section-description {
+        color: #6c757d;
+        font-size: 0.9rem;
+        margin-bottom: 15px;
+    }
+
+    .login-divider {
+        text-align: center;
+        position: relative;
+        margin: 25px 0;
+    }
+
+    .login-divider::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: #dee2e6;
+    }
+
+    .login-divider span {
+        background: white;
+        padding: 0 15px;
+        color: #6c757d;
+        position: relative;
+        font-weight: 500;
+    }
+
+    .login-footer {
+        text-align: center;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+    }
+
+    .login-footer code {
+        background: #f8f9fa;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.85em;
+    }
+
+    /* Form styling */
+    .form-label {
+        font-weight: 500;
+        color: #495057;
+    }
+
+    .input-group-text {
+        background: #f8f9fa;
+        border-right: none;
+    }
+
+    .input-group .form-control {
+        border-left: none;
+    }
+
+    .input-group .form-control:focus {
+        border-color: #ced4da;
+        box-shadow: none;
+    }
+
+    .input-group:focus-within {
+        box-shadow: 0 0 0 0.25rem rgba(102, 126, 234, 0.25);
+        border-radius: 0.375rem;
+    }
+
+    .input-group:focus-within .input-group-text,
+    .input-group:focus-within .form-control {
+        border-color: #667eea;
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        padding: 12px 24px;
+    }
+
+    .btn-primary:hover {
+        background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-outline-primary {
+        color: #667eea;
+        border-color: #667eea;
+        padding: 12px 24px;
+    }
+
+    .btn-outline-primary:hover {
+        background: #667eea;
+        border-color: #667eea;
+        color: white;
+    }
+</style>

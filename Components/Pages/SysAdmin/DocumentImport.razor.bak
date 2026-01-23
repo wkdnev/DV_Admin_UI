@@ -1,0 +1,336 @@
+@page "/admin/document-import"
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@using DocViewer_Proto.Services
+@using DocViewer_Proto.Models
+@using DocViewer_Proto.Components.Documents
+@inject DocumentUploadService DocumentUploadService
+@inject ProjectService ProjectService
+@inject DocumentRepository DocumentRepository
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Document Management</PageTitle>
+
+<div class="lgreeny-dashboard">
+    <!-- Header -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+            <h2 style="margin: 0; color: #1e293b; font-size: 1.75rem; font-weight: 600;">📦 Document Management</h2>
+            <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.875rem;">Manage, upload, and organize documents across projects</p>
+        </div>
+        <button class="lgreeny-btn-secondary" style="width: auto;" @onclick="GoBackToDashboard">
+            ← Back to Dashboard
+        </button>
+    </div>
+
+    <!-- Upload Instructions Card (Full Width) -->
+    <div class="lgreeny-panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+            <h3 class="panel-title">📋 Document Upload Instructions</h3>
+        </div>
+        <div class="panel-body">
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem;">
+                <div>
+                    <h6 style="color: #1e293b; font-weight: 600; margin-bottom: 0.75rem;">✅ Supported File Types:</h6>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">📄 PDF Documents</li>
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">🖼️ TIFF Images</li>
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">🖼️ JPEG/PNG/BMP/GIF Images</li>
+                    </ul>
+                </div>
+                <div>
+                    <h6 style="color: #1e293b; font-weight: 600; margin-bottom: 0.75rem;">📊 File Limits:</h6>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">• Maximum size: 50MB per file</li>
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">• Stored as BLOB in database</li>
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">• Automatic checksum verification</li>
+                    </ul>
+                </div>
+                <div>
+                    <h6 style="color: #1e293b; font-weight: 600; margin-bottom: 0.75rem;">🔧 Available Actions:</h6>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">• View document details and pages</li>
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">• Edit metadata and properties</li>
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">• Upload additional pages</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Project/Schema Selection -->
+    <div class="lgreeny-panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+            <h3 class="panel-title">�️ Select Project / Schema</h3>
+        </div>
+        <div class="panel-body">
+            <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: end;">
+                <div>
+                    <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                        Select a project to view and manage its documents:
+                    </label>
+                    <select @bind="selectedProjectId" 
+                            @bind:after="OnProjectSelected"
+                            style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;">
+                        <option value="0">-- Select a Project --</option>
+                        @if (allProjects != null)
+                        {
+                            @foreach (var project in allProjects)
+                            {
+                                <option value="@project.ProjectId">@project.ProjectName (@project.SchemaName)</option>
+                            }
+                        }
+                    </select>
+                </div>
+                <button class="lgreeny-btn-primary" style="width: auto;" @onclick="OpenUploadDialog" disabled="@(selectedProjectId == 0)">
+                    ➕ Upload New Document
+                </button>
+            </div>
+            
+            @if (selectedProjectId > 0 && selectedProject != null)
+            {
+                <div style="margin-top: 1rem; padding: 0.75rem; background: #dbeafe; border-radius: 0.375rem;">
+                    <span style="color: #1e40af; font-size: 0.875rem; font-weight: 500;">
+                        📁 Selected Project: @selectedProject.ProjectName
+                    </span>
+                    <span style="color: #64748b; font-size: 0.875rem; margin-left: 1rem;">
+                        Schema: @selectedProject.SchemaName
+                    </span>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Documents Table -->
+    @if (selectedProjectId > 0)
+    {
+        @if (isLoadingDocuments)
+        {
+            <div style="text-align: center; padding: 3rem;">
+                <div style="color: #3b82f6; font-size: 2rem;">⏳</div>
+                <p style="color: #64748b; margin-top: 1rem;">Loading documents...</p>
+            </div>
+        }
+        else if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.5rem; margin-bottom: 1.5rem; color: #991b1b;">
+                ⚠️ @errorMessage
+            </div>
+        }
+        else
+        {
+            <div class="lgreeny-panel">
+                <div class="panel-header">
+                    <h3 class="panel-title">� Documents in @selectedProject?.ProjectName</h3>
+                </div>
+                <div class="panel-body">
+                    <!-- Search/Filter Box -->
+                    <div style="margin-bottom: 1rem;">
+                        <div style="position: relative;">
+                            <span style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 1rem;">🔍</span>
+                            <input type="text" 
+                                   @bind="searchText"
+                                   @bind:event="oninput"
+                                   @bind:after="OnSearchChanged"
+                                   placeholder="Search by document number, title, author, or keywords..."
+                                   style="width: 100%; padding: 0.5rem 0.5rem 0.5rem 2.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" />
+                            @if (!string.IsNullOrWhiteSpace(searchText))
+                            {
+                                <button @onclick="ClearSearch"
+                                        style="position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%); padding: 0.25rem 0.5rem; background: #f1f5f9; color: #64748b; border: none; border-radius: 0.25rem; font-size: 0.75rem; cursor: pointer;">
+                                    ✖ Clear
+                                </button>
+                            }
+                        </div>
+                        @if (filteredDocuments != null)
+                        {
+                            <div style="margin-top: 0.5rem; color: #64748b; font-size: 0.875rem;">
+                                Showing @filteredDocuments.Count of @allDocuments.Count documents
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Documents Table -->
+                    @if (filteredDocuments == null || filteredDocuments.Count == 0)
+                    {
+                        <div style="padding: 2rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; text-align: center; color: #64748b;">
+                            @if (string.IsNullOrWhiteSpace(searchText))
+                            {
+                                <div style="font-size: 2rem; margin-bottom: 0.5rem;">📭</div>
+                                <p>No documents found in this project.</p>
+                                <button class="lgreeny-btn-primary" style="margin-top: 1rem;" @onclick="OpenUploadDialog">
+                                    ➕ Upload First Document
+                                </button>
+                            }
+                            else
+                            {
+                                <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔍</div>
+                                <p>No documents match your search criteria.</p>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <table class="lgreeny-table">
+                            <thead>
+                                <tr>
+                                    <th>Document #</th>
+                                    <th>Title</th>
+                                    <th>Type</th>
+                                    <th>Author</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                    <th style="text-align: right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var doc in filteredDocuments)
+                                {
+                                    <tr>
+                                        <td>
+                                            <strong style="color: #1e293b; font-family: monospace;">@doc.DocumentNumber</strong>
+                                        </td>
+                                        <td>
+                                            <strong style="color: #1e293b;">@doc.Title</strong>
+                                            @if (!string.IsNullOrEmpty(doc.Keywords))
+                                            {
+                                                <br>
+                                                <small style="color: #94a3b8;">🏷️ @doc.Keywords</small>
+                                            }
+                                        </td>
+                                        <td>
+                                            <span style="padding: 0.25rem 0.5rem; background: #dbeafe; color: #1e40af; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 500;">
+                                                @doc.DocumentType
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <small style="color: #64748b;">@doc.Author</small>
+                                        </td>
+                                        <td>
+                                            <span style="padding: 0.25rem 0.5rem; background: @GetStatusColor(doc.DocumentStatus); border-radius: 0.25rem; font-size: 0.75rem; font-weight: 500;">
+                                                @doc.DocumentStatus
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <small style="color: #64748b;">@doc.CreatedOn.ToString("MMM dd, yyyy")</small>
+                                        </td>
+                                        <td>
+                                            <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                                                <button style="padding: 0.375rem 0.75rem; background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; border-radius: 0.375rem; font-size: 0.75rem; cursor: pointer;" 
+                                                        @onclick="() => ViewDocument(doc)"
+                                                        title="View Document">
+                                                    👁️ View
+                                                </button>
+                                                <button style="padding: 0.375rem 0.75rem; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 0.375rem; font-size: 0.75rem; cursor: pointer;" 
+                                                        @onclick="() => EditDocument(doc)"
+                                                        title="Edit Metadata">
+                                                    ✏️ Edit
+                                                </button>
+                                                <button style="padding: 0.375rem 0.75rem; background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; border-radius: 0.375rem; font-size: 0.75rem; cursor: pointer;" 
+                                                        @onclick="() => UploadPages(doc)"
+                                                        title="Upload Pages">
+                                                    📄 Pages
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+        }
+    }
+    else
+    {
+        <div class="lgreeny-panel">
+            <div class="panel-body" style="text-align: center; padding: 3rem;">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">📂</div>
+                <h4 style="color: #1e293b; margin-bottom: 0.5rem;">Select a Project to Begin</h4>
+                <p style="color: #64748b; max-width: 600px; margin: 0 auto;">
+                    Choose a project from the dropdown above to view and manage its documents. You can upload new documents, edit existing ones, and manage document pages.
+                </p>
+            </div>
+        </div>
+    }
+
+    <!-- Upload Dialog Modal -->
+    @if (showUploadDialog)
+    {
+        <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;">
+            <div style="background: white; border-radius: 0.5rem; padding: 2rem; max-width: 800px; width: 90%; max-height: 90vh; overflow-y: auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h3 style="margin: 0; color: #1e293b;">📤 Upload Document to @selectedProject?.ProjectName</h3>
+                    <button @onclick="CloseUploadDialog" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b;">✖</button>
+                </div>
+                <DocumentUpload OnUploadCompleted="OnDocumentUploaded" />
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    @@keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+    }
+</style>
+
+@code {
+    private enum TabType { Upload, Migration, Import }
+    private TabType activeTab = TabType.Upload;
+
+    // Migration related
+    private int? migrationDocumentId;
+    private bool isMigrating = false;
+    private string? migrationError;
+    private DocumentMigrationResult? migrationResult;
+
+    private void OnDocumentUploaded(DocumentPage uploadedPage)
+    {
+        // Handle successful upload if needed
+        StateHasChanged();
+    }
+
+    private async Task StartMigration()
+    {
+        isMigrating = true;
+        migrationError = null;
+        migrationResult = null;
+
+        try
+        {
+            // Use the default connection string
+            var connectionString = "DefaultConnection"; // This could be made configurable
+            
+            migrationResult = await DocumentUploadService.MigrateFilePathToBlobAsync(connectionString, migrationDocumentId);
+            
+            if (!migrationResult.Success)
+            {
+                migrationError = migrationResult.ErrorMessage ?? "Migration failed with unknown error";
+            }
+        }
+        catch (Exception ex)
+        {
+            migrationError = $"Migration error: {ex.Message}";
+        }
+        finally
+        {
+            isMigrating = false;
+        }
+    }
+
+    private void ClearMigrationResults()
+    {
+        migrationResult = null;
+        migrationError = null;
+        migrationDocumentId = null;
+    }
+
+    private void GoBackToDashboard()
+    {
+        Navigation.NavigateTo("/admin");
+    }
+}

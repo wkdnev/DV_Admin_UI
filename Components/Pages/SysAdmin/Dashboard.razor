@@ -1,0 +1,244 @@
+
+@page "/sysadmin/dashboard"
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@using DV.Shared.Security
+@using DV.Admin.UI.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Authorization
+@using DV.Admin.UI.Components.Pages.SysAdmin
+@inject UserService UserService
+@inject RoleService RoleService
+@inject ProjectRoleService ProjectRoleService
+@inject IJSRuntime JSRuntime
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Administration Dashboard</PageTitle>
+
+<div class="admin-dashboard">
+    <div class="admin-header">
+        <h1 class="mb-4">System Administration</h1>
+        <p class="lead">Manage users, roles, and permissions for the Document Viewer application.</p>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card text-white bg-primary mb-3 h-100">
+                <div class="card-header d-flex align-items-center">
+                    <i class="bi bi-people-fill me-2"></i>
+                    <h5 class="mb-0">Users</h5>
+                </div>
+                <div class="card-body">
+                    <h3 class="card-title">@(users?.Count ?? 0) Users</h3>
+                    <p class="card-text">Manage user accounts and their assigned roles.</p>
+                    <button class="btn btn-light" @onclick="() => activeTab = TabType.Users">Manage Users</button>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-white bg-success mb-3 h-100">
+                <div class="card-header d-flex align-items-center">
+                    <i class="bi bi-person-badge-fill me-2"></i>
+                    <h5 class="mb-0">Roles</h5>
+                </div>
+                <div class="card-body">
+                    <h3 class="card-title">@(roles?.Count ?? 0) Roles</h3>
+                    <p class="card-text">Define roles and their associated permissions.</p>
+                    <button class="btn btn-light" @onclick="() => activeTab = TabType.Roles">Manage Roles</button>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-white bg-warning mb-3 h-100">
+                <div class="card-header d-flex align-items-center">
+                    <i class="bi bi-diagram-3-fill me-2"></i>
+                    <h5 class="mb-0">Project Roles</h5>
+                </div>
+                <div class="card-body">
+                    <h3 class="card-title">
+                        @if (totalProjectRoles.HasValue)
+                        {
+                            <span>@totalProjectRoles Project Roles</span>
+                        }
+                        else
+                        {
+                            <span>Project-Scoped Access</span>
+                        }
+                    </h3>
+                    <p class="card-text">
+                        Manage project-specific role assignments and permissions.
+                        @if (totalUserProjectAssignments.HasValue && totalUserProjectAssignments > 0)
+                        {
+                            <br><small>@totalUserProjectAssignments active user assignments</small>
+                        }
+                    </p>
+                    <button class="btn btn-light" @onclick="() => activeTab = TabType.ProjectRoles">Manage Project Roles</button>
+                    <a href="/sysadmin/project-role-summary" class="btn btn-outline-light btn-sm mt-2">
+                        <i class="bi bi-list-ul me-1"></i>
+                        View Summary
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-white bg-danger mb-3 h-100">
+                <div class="card-header d-flex align-items-center">
+                    <i class="bi bi-arrow-clockwise me-2"></i>
+                    <h5 class="mb-0">Fresh Start</h5>
+                </div>
+                <div class="card-body">
+                    <h3 class="card-title">Reset & Rebuild</h3>
+                    <p class="card-text">Start fresh with clean project-scoped RBAC data.</p>
+                    <a href="/sysadmin/fresh-start" class="btn btn-light">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        Fresh Start
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs">
+                <li class="nav-item">
+                    <button class="nav-link @(activeTab == TabType.Users ? "active" : "")"
+                            @onclick="() => activeTab = TabType.Users">
+                        <i class="bi bi-people"></i> Users
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link @(activeTab == TabType.Roles ? "active" : "")"
+                            @onclick="() => activeTab = TabType.Roles">
+                        <i class="bi bi-person-badge"></i> Roles
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link @(activeTab == TabType.Projects ? "active" : "")"
+                            @onclick="() => activeTab = TabType.Projects">
+                        <i class="bi bi-folder"></i> Projects
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link @(activeTab == TabType.ProjectRoles ? "active" : "")"
+                            @onclick="() => activeTab = TabType.ProjectRoles">
+                        <i class="bi bi-diagram-3"></i> Project Roles
+                    </button>
+                </li>
+            </ul>
+        </div>
+        <div class="card-body">
+            @if (activeTab == TabType.Users)
+            {
+                <UserManagement />
+            }
+            else if (activeTab == TabType.Roles)
+            {
+                <RoleManagement />
+            }
+            else if (activeTab == TabType.Projects)
+            {
+                <ProjectManagement />
+            }
+            else if (activeTab == TabType.ProjectRoles)
+            {
+                <ProjectRoleOverview />
+            }
+        </div>
+    </div>
+</div>
+
+<style>
+    .admin-header {
+        background-color: #f8f9fa;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        border-radius: 0.25rem;
+    }
+
+    .admin-dashboard .card-header {
+        font-weight: bold;
+    }
+
+    .admin-dashboard .bi {
+        font-size: 1.2rem;
+    }
+</style>
+
+@code {
+    private enum TabType { Users, Roles, Projects, ProjectRoles }
+    private TabType activeTab = TabType.Users;
+
+    private List<ApplicationUser>? users;
+    private List<ApplicationRole>? roles;
+    private int? totalProjectRoles;
+    private int? totalUserProjectAssignments;
+    private string? currentUsername;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Get the current user
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            currentUsername = authState.User.Identity?.Name;
+
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", "Error in Dashboard initialization:", ex.Message);
+        }
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            users = await UserService.GetAllUsersAsync();
+            roles = await RoleService.GetAllRolesAsync();
+            
+            // Load project role statistics
+            await LoadProjectRoleStatistics();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", "Error loading data:", ex.Message);
+        }
+    }
+
+    private async Task LoadProjectRoleStatistics()
+    {
+        try
+        {
+            // Get all project roles across all projects
+            var allProjects = await ProjectRoleService.GetAllProjectsAsync();
+            var allProjectRoles = new List<ProjectRole>();
+            var totalAssignments = 0;
+
+            foreach (var project in allProjects)
+            {
+                var projectRoles = await ProjectRoleService.GetProjectRolesAsync(project.ProjectId);
+                allProjectRoles.AddRange(projectRoles);
+
+                // Count active user assignments for each project role
+                foreach (var projectRole in projectRoles)
+                {
+                    var users = await ProjectRoleService.GetUsersInProjectRoleAsync(projectRole.ProjectRoleId);
+                    totalAssignments += users.Count;
+                }
+            }
+
+            totalProjectRoles = allProjectRoles.Count;
+            totalUserProjectAssignments = totalAssignments;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", "Error loading project role statistics:", ex.Message);
+            // Don't throw - just leave the statistics as null so they won't display
+        }
+    }
+}
+
+
+

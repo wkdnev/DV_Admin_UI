@@ -1,0 +1,293 @@
+@page "/sysadmin/users"
+@using DV.Shared.Security
+@using DV.Admin.UI.Services
+@using Microsoft.AspNetCore.Components.Authorization
+@inject UserService UserService
+@inject IJSRuntime JSRuntime
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+
+<PageTitle>User Management - Cyber Terminal</PageTitle>
+
+<div class="cyber-container">
+    <!-- Header -->
+    <div class="cyber-header">
+        <div class="cyber-header-left">
+            <span class="cyber-icon">👤</span>
+            <div>
+                <h1 class="cyber-title">USER MANAGEMENT</h1>
+                <p class="cyber-subtitle">ACCESS CONTROL SYSTEM v3.2.1 // CLASSIFIED</p>
+            </div>
+        </div>
+        <div class="cyber-status">
+            <span class="status-indicator active"></span>
+            <span class="status-text">ONLINE</span>
+            <span class="cyber-time">@DateTime.Now.ToString("HH:mm:ss")</span>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="cyber-panel">
+            <div class="cyber-terminal" style="min-height: 200px; display: flex; align-items: center; justify-content: center;">
+                <div style="text-align: center;">
+                    <div style="font-size: 2rem; margin-bottom: 1rem;">⟳</div>
+                    <div>LOADING USER DATABASE...</div>
+                    <div class="terminal-cursor">█</div>
+                </div>
+            </div>
+        </div>
+    }
+    else if (errorMessage != null)
+    {
+        <div class="cyber-alert-card error">
+            <div class="alert-icon">⊗</div>
+            <div class="alert-content">
+                <div class="alert-title">SYSTEM ERROR</div>
+                <div class="alert-message">@errorMessage</div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Stats Grid -->
+        <div class="cyber-stats-grid">
+            <div class="cyber-stat-card">
+                <div class="stat-icon">👥</div>
+                <div class="stat-value">@(users?.Count ?? 0)</div>
+                <div class="stat-label">TOTAL USERS</div>
+                <div class="stat-bar">
+                    <div class="stat-bar-fill" style="width: 100%"></div>
+                </div>
+            </div>
+
+            <div class="cyber-stat-card">
+                <div class="stat-icon">✓</div>
+                <div class="stat-value">@(users?.Count(u => u.IsActive) ?? 0)</div>
+                <div class="stat-label">ACTIVE USERS</div>
+                <div class="stat-bar">
+                    <div class="stat-bar-fill" style="width: @(users!.Count > 0 ? (users.Count(u => u.IsActive) * 100 / users.Count) : 0)%"></div>
+                </div>
+            </div>
+
+            <div class="cyber-stat-card">
+                <div class="stat-icon">⊗</div>
+                <div class="stat-value">@(users?.Count(u => !u.IsActive) ?? 0)</div>
+                <div class="stat-label">INACTIVE USERS</div>
+                <div class="stat-bar">
+                    <div class="stat-bar-fill threat" style="width: @(users!.Count > 0 ? (users.Count(u => !u.IsActive) * 100 / users.Count) : 0)%"></div>
+                </div>
+            </div>
+
+            <div class="cyber-stat-card">
+                <div class="stat-icon">🔍</div>
+                <div class="stat-value">@filteredUsers.Count</div>
+                <div class="stat-label">QUERY RESULTS</div>
+                <div class="stat-bar">
+                    <div class="stat-bar-fill" style="width: @(users.Count > 0 ? (filteredUsers.Count * 100 / users.Count) : 0)%"></div>
+                </div>
+            </div>
+        </div>
+
+        @if (users == null || users.Count == 0)
+        {
+            <div class="cyber-panel">
+                <div class="cyber-terminal" style="padding: 3rem; text-align: center;">
+                    <div style="font-size: 1.5rem; margin-bottom: 1rem;">⚠</div>
+                    <div style="margin-bottom: 0.5rem;">NO USERS DETECTED IN DATABASE</div>
+                    <div style="color: #00cc7f; font-size: 0.875rem;">Users will be automatically registered upon first system access</div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <!-- Control Panel -->
+            <div class="cyber-panel">
+                <div class="panel-header">
+                    <span class="panel-title">/// SEARCH & FILTER</span>
+                    <button class="cyber-btn-sm" @onclick="RefreshUsers">⟳ REFRESH</button>
+                </div>
+                <div style="padding: 1rem 1.5rem;">
+                    <div class="cyber-input-group">
+                        <input type="text" class="cyber-input" placeholder="Search by username, name, or email..." @bind="searchTerm" @bind:event="oninput" @onkeyup="ApplySearch" />
+                        @if (!string.IsNullOrWhiteSpace(searchTerm))
+                        {
+                            <button class="cyber-btn" @onclick="ClearSearch">✕ CLEAR</button>
+                        }
+                        else
+                        {
+                            <button class="cyber-btn">🔍 SEARCH</button>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- User List -->
+            <div class="cyber-panel">
+                <div class="panel-header">
+                    <span class="panel-title">/// REGISTERED USERS [@filteredUsers.Count]</span>
+                </div>
+                <div class="cyber-table-container">
+                    <table class="cyber-table">
+                    <thead>
+                        <tr>
+                            <th>USER ID</th>
+                            <th>IDENTITY</th>
+                            <th>EMAIL</th>
+                            <th>ACCESS LEVEL</th>
+                            <th>STATUS</th>
+                            <th>REGISTERED</th>
+                            <th>ACTIONS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var user in filteredUsers)
+                        {
+                            <tr>
+                                <td><span class="mono">@user.UserId.ToString("D4")</span></td>
+                                <td>
+                                    <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                                        <strong>@user.DisplayName</strong>
+                                        <span style="font-size: 0.8125rem; color: #00cc7f; opacity: 0.7;">@user.Username</span>
+                                    </div>
+                                </td>
+                                <td><span style="color: #00cc7f;">@(user.Email ?? "N/A")</span></td>
+                                <td>
+                                    @if (user.IsGlobalAdmin == true)
+                                    {
+                                        <span class="badge-warning" style="background: rgba(255, 0, 64, 0.2); border-color: #ff0040; color: #ff0040;">ADMIN</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge-active">USER</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (user.IsActive)
+                                    {
+                                        <span class="badge-active">⚡ ACTIVE</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge-idle">⊗ INACTIVE</span>
+                                    }
+                                </td>
+                                <td><span class="mono" style="color: #00cc7f;">@user.CreatedDate.ToString("yyyy-MM-dd HH:mm")</span></td>
+                                <td>
+                                    <div style="display: flex; gap: 0.5rem;">
+                                        <button class="cyber-action-btn" title="Toggle Status" @onclick="() => ToggleUserStatus(user)">
+                                            @if (user.IsActive)
+                                            {
+                                                <text>⏸</text>
+                                            }
+                                            else
+                                            {
+                                                <text>▶</text>
+                                            }
+                                        </button>
+                                        <button class="cyber-action-btn" title="View Details">⚙</button>
+                                        <button class="cyber-action-btn danger" title="Remove User">⊗</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Info Panel -->
+        <div class="cyber-alert-card success">
+            <div class="alert-icon">ℹ</div>
+            <div class="alert-content">
+                <div class="alert-title">PROJECT-BASED ACCESS CONTROL</div>
+                <div class="alert-message">User roles and permissions are managed through the Project Role Management system. Navigate to Project Roles to assign specific access levels.</div>
+            </div>
+        </div>
+    }
+}
+</div>
+
+@code {
+    private List<ApplicationUser> users = new();
+    private List<ApplicationUser> filteredUsers = new();
+    private string? errorMessage;
+    private bool isLoading = true;
+    private string searchTerm = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+            users = await UserService.GetAllUsersAsync();
+            ApplySearch();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading users: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RefreshUsers()
+    {
+        await LoadUsers();
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? string.Empty;
+        ApplySearch();
+        await Task.CompletedTask;
+    }
+
+    private async Task ClearSearch()
+    {
+        searchTerm = string.Empty;
+        ApplySearch();
+        await Task.CompletedTask;
+    }
+
+    private void ApplySearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            filteredUsers = users;
+        }
+        else
+        {
+            var search = searchTerm.ToLower();
+            filteredUsers = users.Where(u =>
+                (u.Username?.ToLower().Contains(search) ?? false) ||
+                (u.DisplayName?.ToLower().Contains(search) ?? false) ||
+                (u.Email?.ToLower().Contains(search) ?? false)
+            ).ToList();
+        }
+    }
+
+    private async Task ToggleUserStatus(ApplicationUser user)
+    {
+        try
+        {
+            user.IsActive = !user.IsActive;
+            await UserService.UpdateUserAsync(user);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error updating user status: {ex.Message}";
+        }
+    }
+}
+
+

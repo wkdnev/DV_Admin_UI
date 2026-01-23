@@ -1,0 +1,491 @@
+@page "/sysadmin/projects"
+@using DV.Shared.Models
+@using DV.Admin.UI.Services
+@using Microsoft.AspNetCore.Authorization
+@inject ProjectService ProjectService
+@inject SchemaService SchemaService
+@inject IJSRuntime JSRuntime
+
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+
+@rendermode InteractiveServer
+
+<PageTitle>Project Management</PageTitle>
+
+<div class="lgreeny-dashboard">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+            <h2 style="margin: 0; color: #1e293b; font-size: 1.75rem; font-weight: 600;">📋 Project Management</h2>
+            <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.875rem;">Manage projects and their configurations</p>
+        </div>
+        <button class="lgreeny-btn-primary" style="width: auto;" @onclick="() => OpenProjectDialog(null)">
+            ➕ Create New Project
+        </button>
+    </div>
+
+    @if (projects != null && projects.Count > 0)
+    {
+        <div class="lgreeny-panel" style="margin-bottom: 1.5rem;">
+            <div class="panel-header">
+                <h3 class="panel-title">🔍 Search Projects</h3>
+            </div>
+            <div class="panel-body">
+                <div style="display: flex; gap: 1rem; align-items: flex-end;">
+                    <div style="flex: 1;">
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Search by Code, Name, or Schema</label>
+                        <input type="text" 
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" 
+                               placeholder="Type to search..."
+                               @bind="searchTerm"
+                               @bind:event="oninput" />
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(searchTerm))
+                    {
+                        <button class="lgreeny-btn-secondary" style="height: fit-content;" @onclick="ClearSearch">
+                            ❌ Clear
+                        </button>
+                    }
+                </div>
+                @if (filteredProjects != null)
+                {
+                    <div style="margin-top: 0.75rem; color: #64748b; font-size: 0.875rem;">
+                        Showing <strong style="color: #1e293b;">@filteredProjects.Count</strong> of <strong style="color: #1e293b;">@projects.Count</strong> projects
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <div class="lgreeny-panel">
+        <div class="panel-header">
+            <h3 class="panel-title">📁 Projects</h3>
+        </div>
+        <div class="panel-body">
+            @if (isLoading)
+            {
+                <div style="text-align: center; padding: 2rem;">
+                    <div style="color: #3b82f6; font-size: 1.5rem;">⏳</div>
+                    <p style="color: #64748b; margin-top: 0.5rem;">Loading projects...</p>
+                </div>
+            }
+            else if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.5rem; color: #991b1b;">
+                    <h6 style="margin: 0 0 0.5rem 0; font-weight: 600;">⚠️ Error Loading Projects</h6>
+                    <p style="margin: 0 0 0.75rem 0;">@errorMessage</p>
+                    <button class="lgreeny-btn-secondary" style="padding: 0.375rem 0.75rem; font-size: 0.875rem;" @onclick="LoadProjects">
+                        🔄 Retry
+                    </button>
+                </div>
+            }
+            else if (projects == null)
+            {
+                <p style="color: #64748b;"><em>No projects loaded yet...</em></p>
+            }
+            else if (projects.Count == 0)
+            {
+                <div style="padding: 1rem; background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 0.5rem; color: #1e40af;">
+                    <h6 style="margin: 0 0 0.5rem 0; font-weight: 600;">ℹ️ No Projects Found</h6>
+                    <p style="margin: 0;">No projects have been created yet. Click "Create New Project" to get started.</p>
+                </div>
+            }
+            else if (filteredProjects == null || filteredProjects.Count == 0)
+            {
+                <div style="padding: 1rem; background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 0.5rem; color: #1e40af;">
+                    <h6 style="margin: 0 0 0.5rem 0; font-weight: 600;">🔍 No Matching Projects</h6>
+                    <p style="margin: 0;">No projects match your search criteria. Try adjusting your search terms.</p>
+                </div>
+            }
+            else
+            {
+                <table class="lgreeny-table">
+                    <thead>
+                        <tr>
+                            <th>Code</th>
+                            <th>Name</th>
+                            <th>Schema</th>
+                            <th>Read/Edit Principal</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th style="text-align: right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var project in filteredProjects)
+                        {
+                            <tr>
+                                <td>
+                                    <strong style="color: #1e293b;">@project.ProjectCode</strong>
+                                </td>
+                                <td>
+                                    <div style="color: #1e293b;">@project.ProjectName</div>
+                                </td>
+                                <td>
+                                    <span style="padding: 0.25rem 0.75rem; background: #dbeafe; color: #1e40af; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500;">
+                                        @project.SchemaName
+                                    </span>
+                                </td>
+                                <td>
+                                    <div style="font-size: 0.8rem;">
+                                        <div style="color: #0d9488;">R: @project.ReadPrincipal</div>
+                                        <div style="color: #b91c1c;">E: @project.EditPrincipal</div>
+                                    </div>
+                                </td>
+                                <td>
+                                    @if (project.IsActive)
+                                    {
+                                        <span style="padding: 0.25rem 0.75rem; background: #d1fae5; color: #065f46; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500;">
+                                            Active
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span style="padding: 0.25rem 0.75rem; background: #f1f5f9; color: #475569; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500;">
+                                            Inactive
+                                        </span>
+                                    }
+                                </td>
+                                <td>
+                                    <small style="color: #64748b;">@project.CreatedDate.ToString("yyyy-MM-dd")</small>
+                                </td>
+                                <td style="text-align: right;">
+                                    <div style="display: flex; gap: 0.5rem; justify-content: flex-end; flex-wrap: wrap;">
+                                        <button style="padding: 0.375rem 0.75rem; background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; border-radius: 0.375rem; font-size: 0.875rem; cursor: pointer; font-weight: 500;" 
+                                                @onclick="() => OpenProjectDialog(project)"
+                                                title="Edit Project">
+                                            ✏️ Edit
+                                        </button>
+                                        @if (project.IsActive)
+                                        {
+                                            <button style="padding: 0.375rem 0.75rem; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 0.375rem; font-size: 0.875rem; cursor: pointer; font-weight: 500;" 
+                                                    @onclick="() => DeactivateProject(project)"
+                                                    title="Deactivate Project">
+                                                ⏸ Deactivate
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button style="padding: 0.375rem 0.75rem; background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; border-radius: 0.375rem; font-size: 0.875rem; cursor: pointer; font-weight: 500;" 
+                                                    @onclick="() => ActivateProject(project)"
+                                                    title="Activate Project">
+                                                ▶ Activate
+                                            </button>
+                                        }
+                                        <button style="padding: 0.375rem 0.75rem; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 0.375rem; font-size: 0.875rem; cursor: pointer; font-weight: 500;" 
+                                                @onclick="() => DeleteProject(project)"
+                                                title="Delete Project">
+                                            🗑️ Delete
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+</div>
+
+@if (showProjectDialog)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+        <div style="background: white; border-radius: 0.5rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); max-width: 700px; width: 100%; margin: 1rem; max-height: 90vh; display: flex; flex-direction: column;">
+            <div style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0;">
+                <h3 style="margin: 0; color: #1e293b; font-size: 1.25rem; font-weight: 600;">
+                    @(editProject.ProjectId == 0 ? "➕ Create" : "✏️ Edit") Project
+                </h3>
+            </div>
+            <div style="padding: 1.5rem; overflow-y: auto; flex: 1;">
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1rem;">
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Project Code</label>
+                        <input type="text" 
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" 
+                               @bind="editProject.ProjectCode" />
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Project Name</label>
+                        <input type="text" 
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" 
+                               @bind="editProject.ProjectName" />
+                    </div>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1rem;">
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Schema Name</label>
+                        <input type="text" 
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" 
+                               @bind="editProject.SchemaName" 
+                               disabled="@(editProject.ProjectId != 0)" />
+                        @if (editProject.ProjectId != 0)
+                        {
+                            <div style="color: #64748b; font-size: 0.75rem; margin-top: 0.25rem;">Schema name cannot be changed after creation.</div>
+                        }
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Read Principal (AD Group)</label>
+                        <input type="text" 
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" 
+                               @bind="editProject.ReadPrincipal" />
+                        
+                        <label style="display: block; margin-top: 1rem; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Edit Principal (AD Group)</label>
+                        <input type="text" 
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" 
+                               @bind="editProject.EditPrincipal" />
+                    </div>
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Folder Path</label>
+                    <input type="text" 
+                           style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" 
+                           @bind="editProject.FolderPath" />
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Description</label>
+                    <textarea style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem; font-family: inherit;" 
+                              @bind="editProject.Description" 
+                              rows="3"></textarea>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" 
+                           id="isActive" 
+                           style="cursor: pointer;" 
+                           @bind="editProject.IsActive" />
+                    <label for="isActive" style="color: #1e293b; font-weight: 500; font-size: 0.875rem; cursor: pointer;">Active</label>
+                </div>
+            </div>
+            <div style="padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; display: flex; gap: 0.75rem; justify-content: flex-end;">
+                <button class="lgreeny-btn-secondary" @onclick="CloseProjectDialog">Cancel</button>
+                <button class="lgreeny-btn-primary" @onclick="SaveProject">💾 Save</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Project>? projects;
+    private List<Project>? filteredProjects;
+    private ProjectEditModel editProject = new();
+    private bool showProjectDialog = false;
+    private string? errorMessage;
+    private bool isLoading = false;
+    
+    private string _searchTerm = string.Empty;
+    private string searchTerm
+    {
+        get => _searchTerm;
+        set
+        {
+            _searchTerm = value;
+            FilterProjects();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProjects();
+    }
+
+    private async Task LoadProjects()
+    {
+        isLoading = true;
+        errorMessage = null;
+        
+        try
+        {
+            Console.WriteLine("Loading projects...");
+            projects = (await ProjectService.GetAllProjectsAsync()).ToList();
+            Console.WriteLine($"Loaded {projects.Count} projects successfully");
+            FilterProjects();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            Console.WriteLine($"Error loading projects: {ex}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading projects: {errorMessage}");
+            await JSRuntime.InvokeVoidAsync("console.error", ex.ToString());
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void FilterProjects()
+    {
+        if (projects == null)
+        {
+            filteredProjects = null;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(searchTerm))
+        {
+            filteredProjects = projects;
+            return;
+        }
+
+        var search = searchTerm.Trim().ToLower();
+        filteredProjects = projects.Where(p =>
+            (p.ProjectCode?.ToLower().Contains(search) ?? false) ||
+            (p.ProjectName?.ToLower().Contains(search) ?? false) ||
+            (p.SchemaName?.ToLower().Contains(search) ?? false) ||
+            (p.ReadPrincipal?.ToLower().Contains(search) ?? false) ||
+            (p.EditPrincipal?.ToLower().Contains(search) ?? false) ||
+            (p.Description?.ToLower().Contains(search) ?? false)
+        ).ToList();
+    }
+
+    private void ClearSearch()
+    {
+        searchTerm = string.Empty;
+        FilterProjects();
+    }
+
+    private void OpenProjectDialog(Project? project)
+    {
+        try
+        {
+            if (project == null)
+            {
+                editProject = new ProjectEditModel
+                {
+                    IsActive = true,
+                    CreatedDate = DateTime.UtcNow
+                };
+                Console.WriteLine("Creating new project");
+            }
+            else
+            {
+                editProject = ProjectEditModel.FromProject(project);
+                Console.WriteLine($"Editing project: {project.ProjectName}");
+            }
+
+            showProjectDialog = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error opening project dialog: {ex}");
+            JSRuntime.InvokeVoidAsync("alert", $"Error opening dialog: {ex.Message}");
+        }
+    }
+
+    private void CloseProjectDialog()
+    {
+        showProjectDialog = false;
+        editProject = new ProjectEditModel();
+    }
+
+    private async Task SaveProject()
+    {
+        try
+        {
+            Console.WriteLine($"Saving project: {editProject.ProjectName}");
+            
+            if (string.IsNullOrWhiteSpace(editProject.ProjectCode) || 
+                string.IsNullOrWhiteSpace(editProject.ProjectName) ||
+                string.IsNullOrWhiteSpace(editProject.SchemaName))
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Project Code, Name, and Schema Name are required.");
+                return;
+            }
+
+            var project = editProject.ToProject();
+            Console.WriteLine($"Converted to project record: {project.ProjectName}");
+
+            if (editProject.ProjectId == 0)
+            {
+                Console.WriteLine("Validating schema name...");
+                // Validate schema name
+                var isValidSchema = await ProjectService.ValidateSchemaNameAsync(editProject.SchemaName);
+                if (!isValidSchema)
+                {
+                    await JSRuntime.InvokeVoidAsync("alert", "Schema name is already in use.");
+                    return;
+                }
+
+                Console.WriteLine("Creating new project...");
+                await ProjectService.CreateProjectAsync(project);
+                Console.WriteLine("Project created successfully");
+                await JSRuntime.InvokeVoidAsync("alert", "Project created successfully!");
+            }
+            else
+            {
+                Console.WriteLine("Updating existing project...");
+                await ProjectService.UpdateProjectAsync(project);
+                Console.WriteLine("Project updated successfully");
+                await JSRuntime.InvokeVoidAsync("alert", "Project updated successfully!");
+            }
+
+            await LoadProjects();
+            CloseProjectDialog();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving project: {ex}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving project: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("console.error", ex.ToString());
+        }
+    }
+
+    private async Task DeleteProject(Project project)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            $"Are you sure you want to delete project '{project.ProjectName}'? This will also delete all associated documents and cannot be undone.");
+        
+        if (!confirmed) return;
+
+        try
+        {
+            Console.WriteLine($"Deleting project: {project.ProjectName}");
+            await ProjectService.DeleteProjectAsync(project.ProjectId);
+            Console.WriteLine("Project deleted successfully");
+            await JSRuntime.InvokeVoidAsync("alert", "Project deleted successfully!");
+            await LoadProjects();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error deleting project: {ex}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error deleting project: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("console.error", ex.ToString());
+        }
+    }
+
+    private async Task DeactivateProject(Project project)
+    {
+        try
+        {
+            Console.WriteLine($"Deactivating project: {project.ProjectName}");
+            await ProjectService.DeactivateProjectAsync(project.ProjectId);
+            Console.WriteLine("Project deactivated successfully");
+            await JSRuntime.InvokeVoidAsync("alert", "Project deactivated successfully!");
+            await LoadProjects();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error deactivating project: {ex}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error deactivating project: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("console.error", ex.ToString());
+        }
+    }
+
+    private async Task ActivateProject(Project project)
+    {
+        try
+        {
+            Console.WriteLine($"Activating project: {project.ProjectName}");
+            await ProjectService.ActivateProjectAsync(project.ProjectId);
+            Console.WriteLine("Project activated successfully");
+            await JSRuntime.InvokeVoidAsync("alert", "Project activated successfully!");
+            await LoadProjects();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error activating project: {ex}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error activating project: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("console.error", ex.ToString());
+        }
+    }
+}
+

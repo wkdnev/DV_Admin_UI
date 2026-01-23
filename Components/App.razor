@@ -1,0 +1,88 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Authentication
+@using DV.Admin.UI.Components.Layout
+@using DV.Admin.UI.Components.Security
+@inject PersistentComponentState ApplicationState
+@inject IHttpContextAccessor HttpContextAccessor
+@implements IDisposable
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="stylesheet" href="bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="DV.Admin.UI.styles.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/openseadragon@4.1.0/build/openseadragon/openseadragon.min.css" />
+    <HeadOutlet />
+</head>
+
+<body>
+    <CascadingAuthenticationState>
+        <Router AppAssembly="@typeof(App).Assembly">
+            <Found Context="routeData">
+                <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+                    <NotAuthorized>
+                        @if (context.User.Identity?.IsAuthenticated == true)
+                        {
+                            <RedirectToAccessDenied />
+                        }
+                        else
+                        {
+                            <RedirectToLogin />
+                        }
+                    </NotAuthorized>
+                </AuthorizeRouteView>
+                <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+            </Found>
+            <NotFound>
+                <PageTitle>Not found</PageTitle>
+                <LayoutView Layout="@typeof(MainLayout)">
+                    <p role="alert">Sorry, there's nothing at this address.</p>
+                </LayoutView>
+            </NotFound>
+        </Router>
+    </CascadingAuthenticationState>
+
+    <script src="_framework/blazor.web.js"></script>
+    <script src="js/app-utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/openseadragon@4.1.0/build/openseadragon/openseadragon.min.js"></script>
+    <script src="js/openseadragon-viewer.js"></script>
+</body>
+
+</html>
+
+@code {
+    private PersistingComponentStateSubscription _subscription;
+    private string? _accessToken;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _subscription = ApplicationState.RegisterOnPersisting(PersistData);
+
+        if (HttpContextAccessor.HttpContext != null)
+        {
+            _accessToken = await HttpContextAccessor.HttpContext.GetTokenAsync("access_token");
+        }
+    }
+
+    private Task PersistData()
+    {
+        if (_accessToken != null)
+        {
+            ApplicationState.PersistAsJson("AccessToken", _accessToken);
+        }
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        _subscription.Dispose();
+    }
+}

@@ -1,0 +1,648 @@
+@page "/sysadmin/diagnostics"
+@using DV.Shared.Models
+@using DV.Admin.UI.Services
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Authorization
+@inject AppDbContext DbContext
+@inject ProjectService ProjectService
+@inject SchemaService SchemaService
+@inject DatabaseMigrationService MigrationService
+@inject IJSRuntime JSRuntime
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@rendermode InteractiveServer
+
+<PageTitle>System Diagnostics</PageTitle>
+
+<div class="lgreeny-dashboard">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+            <h2 style="margin: 0; color: #1e293b; font-size: 1.75rem; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+                <Icon Name="tool" Size="28" /> System Diagnostics
+            </h2>
+            <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.875rem;">Database health checks and schema management</p>
+        </div>
+    </div>
+
+    <!-- Info Banner -->
+    <div style="padding: 1rem 1.5rem; background: #dbeafe; border: 1px solid #93c5fd; border-radius: 0.5rem; margin-bottom: 1.5rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <Icon Name="info" Size="24" Color="#3b82f6" />
+            <div>
+                <div style="color: #1e40af; font-weight: 600; margin-bottom: 0.25rem;">System Health Check</div>
+                <div style="color: #1e40af; font-size: 0.875rem;">This page helps diagnose issues with the project management system and create missing schemas.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Schema Migration Banner -->
+    <div style="padding: 1rem 1.5rem; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); border-radius: 0.5rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <div style="color: white; font-weight: 600; margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.5rem;">
+                <span>🗄️</span>
+                <span>Schema Migration Available</span>
+            </div>
+            <div style="color: rgba(255,255,255,0.9); font-size: 0.875rem;">Migrate existing schemas to include new Document and DocumentPage fields</div>
+        </div>
+        <a href="/sysadmin/schema-migration" class="lgreeny-btn-secondary" style="background: white; color: #3b82f6; border-color: white;">
+            Go to Migration →
+        </a>
+    </div>
+    
+    @if (!string.IsNullOrEmpty(initializationError))
+    {
+        <div style="padding: 1rem 1.5rem; background: #fef3c7; border: 1px solid #fde047; border-radius: 0.5rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <span style="font-size: 1.5rem;">⚠️</span>
+                <div>
+                    <strong style="color: #92400e;">Initialization Warning:</strong>
+                    <span style="color: #92400e;"> @initializationError</span>
+                </div>
+            </div>
+            <button style="background: transparent; border: none; color: #92400e; cursor: pointer; font-size: 1.25rem;" @onclick="() => initializationError = null">✕</button>
+        </div>
+    }
+
+    <!-- Diagnostic Tests -->
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+        <!-- Database Connection Test -->
+        <div class="lgreeny-panel">
+            <div class="panel-header">
+                <h3 class="panel-title">🗄️ Database Connection</h3>
+            </div>
+            <div class="panel-body">
+                @if (dbConnectionStatus == null)
+                {
+                    <button class="lgreeny-btn-primary" @onclick="TestDatabaseConnection">
+                        Test Connection
+                    </button>
+                }
+                else if (dbConnectionStatus.IsSuccess)
+                {
+                    <div style="padding: 1rem; background: #d1fae5; border: 1px solid #a7f3d0; border-radius: 0.375rem; color: #065f46;">
+                        <strong>✅ Database connection successful</strong>
+                    </div>
+                }
+                else
+                {
+                    <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.375rem; color: #991b1b;">
+                        <strong>❌ Database connection failed</strong>
+                        <div style="margin-top: 0.5rem; font-size: 0.875rem;">@dbConnectionStatus.ErrorMessage</div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Project Table Status -->
+        <div class="lgreeny-panel">
+            <div class="panel-header">
+                <h3 class="panel-title">📋 Project Table Status</h3>
+            </div>
+            <div class="panel-body">
+                @if (projectTableStatus == null)
+                {
+                    <button class="lgreeny-btn-primary" @onclick="CheckProjectTable">
+                        Check Table
+                    </button>
+                }
+                else
+                {
+                    <div style="padding: 1rem; background: @(projectTableStatus.TableExists ? "#d1fae5" : "#fef3c7"); border: 1px solid @(projectTableStatus.TableExists ? "#a7f3d0" : "#fde047"); border-radius: 0.375rem; color: @(projectTableStatus.TableExists ? "#065f46" : "#92400e");">
+                        <div style="margin-bottom: 0.5rem;"><strong>Table Exists:</strong> @(projectTableStatus.TableExists ? "Yes" : "No")</div>
+                        <div style="margin-bottom: 0.5rem;"><strong>Project Count:</strong> @projectTableStatus.ProjectCount</div>
+                        <div style="margin-bottom: 0.5rem;"><strong>Migration Needed:</strong> @(projectTableStatus.MigrationNeeded ? "Yes" : "No")</div>
+                        
+                        @if (projectTableStatus.ExistingColumns.Any())
+                        {
+                            <div style="border-top: 1px solid rgba(0,0,0,0.1); margin-top: 0.75rem; padding-top: 0.75rem;">
+                                <strong>Existing Columns:</strong>
+                                <div style="margin-top: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                                    @foreach (var column in projectTableStatus.ExistingColumns)
+                                    {
+                                        <span style="padding: 0.25rem 0.75rem; background: #64748b; color: white; border-radius: 0.25rem; font-size: 0.75rem;">@column</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(projectTableStatus.ErrorMessage))
+                        {
+                            <div style="border-top: 1px solid rgba(0,0,0,0.1); margin-top: 0.75rem; padding-top: 0.75rem;">
+                                <strong>Error:</strong> @projectTableStatus.ErrorMessage
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+        <!-- Entity Framework Test -->
+        <div class="lgreeny-panel">
+            <div class="panel-header">
+                <h3 class="panel-title">⚙️ Entity Framework Test</h3>
+            </div>
+            <div class="panel-body">
+                @if (efTestStatus == null)
+                {
+                    <button class="lgreeny-btn-primary" @onclick="TestEntityFramework">
+                        Test EF Core
+                    </button>
+                }
+                else if (efTestStatus.IsSuccess)
+                {
+                    <div style="padding: 1rem; background: #d1fae5; border: 1px solid #a7f3d0; border-radius: 0.375rem; color: #065f46;">
+                        <strong>✅ Entity Framework working correctly</strong>
+                        <div style="margin-top: 0.5rem; font-size: 0.875rem;">Found @efTestStatus.ProjectCount projects</div>
+                    </div>
+                }
+                else
+                {
+                    <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.375rem; color: #991b1b;">
+                        <strong>❌ Entity Framework error</strong>
+                        <div style="margin-top: 0.5rem; font-size: 0.875rem;">@efTestStatus.ErrorMessage</div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Schema Service Test -->
+        <div class="lgreeny-panel">
+            <div class="panel-header">
+                <h3 class="panel-title">🔗 Schema Service Test</h3>
+            </div>
+            <div class="panel-body">
+                @if (schemaTestStatus == null)
+                {
+                    <button class="lgreeny-btn-primary" @onclick="TestSchemaService">
+                        Test Schema
+                    </button>
+                }
+                else if (schemaTestStatus.IsSuccess)
+                {
+                    <div style="padding: 1rem; background: #d1fae5; border: 1px solid #a7f3d0; border-radius: 0.375rem; color: #065f46;">
+                        <strong>✅ Schema service working correctly</strong>
+                    </div>
+                }
+                else
+                {
+                    <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.375rem; color: #991b1b;">
+                        <strong>❌ Schema service error</strong>
+                        <div style="margin-top: 0.5rem; font-size: 0.875rem;">@schemaTestStatus.ErrorMessage</div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    <!-- Schema Management Section -->
+    <div class="lgreeny-panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+            <h3 class="panel-title">🗂️ Project Schema Management</h3>
+        </div>
+        <div class="panel-body">
+            @if (projects == null)
+            {
+                <button class="lgreeny-btn-primary" @onclick="LoadProjects">
+                    🔄 Load Projects
+                </button>
+            }
+            else if (projects.Count == 0)
+            {
+                <div style="padding: 1rem; background: #fef3c7; border: 1px solid #fde047; border-radius: 0.375rem; color: #92400e;">
+                    ⚠️ No projects found. Create some projects first.
+                </div>
+            }
+            else
+            {
+                <div style="padding: 1rem; background: #dbeafe; border: 1px solid #93c5fd; border-radius: 0.375rem; color: #1e40af; margin-bottom: 1.5rem;">
+                    ℹ️ This section shows all projects and their schema status. You can create missing schemas here.
+                </div>
+                
+                <div style="padding: 0;">
+                    <table class="lgreeny-table" style="margin: 0;">
+                        <thead>
+                            <tr>
+                                <th>Project</th>
+                                <th>Schema Name</th>
+                                <th>Schema Exists</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var project in projects)
+                            {
+                                <tr>
+                                    <td>
+                                        <div style="font-weight: 600; color: #1e293b;">@project.ProjectName</div>
+                                        <div style="font-size: 0.875rem; color: #64748b;">@project.ProjectCode</div>
+                                    </td>
+                                    <td>
+                                        <span style="padding: 0.25rem 0.75rem; background: #dbeafe; color: #1e40af; border-radius: 0.25rem; font-size: 0.875rem;">@project.SchemaName</span>
+                                    </td>
+                                    <td>
+                                        @if (schemaStatus.ContainsKey(project.SchemaName))
+                                        {
+                                            @if (schemaStatus[project.SchemaName])
+                                            {
+                                                <span style="padding: 0.25rem 0.75rem; background: #d1fae5; color: #065f46; border-radius: 0.25rem; font-size: 0.875rem; font-weight: 500;">✅ Exists</span>
+                                            }
+                                            else
+                                            {
+                                                <span style="padding: 0.25rem 0.75rem; background: #fef3c7; color: #92400e; border-radius: 0.25rem; font-size: 0.875rem; font-weight: 500;">⚠️ Missing</span>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span style="padding: 0.25rem 0.75rem; background: #f1f5f9; color: #64748b; border-radius: 0.25rem; font-size: 0.875rem;">❓ Unknown</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (schemaStatus.ContainsKey(project.SchemaName) && !schemaStatus[project.SchemaName])
+                                        {
+                                            <button class="lgreeny-btn-primary" 
+                                                    style="padding: 0.375rem 0.75rem; font-size: 0.875rem;"
+                                                    @onclick="() => CreateProjectSchema(project)"
+                                                    disabled="@isCreatingSchemas">
+                                                @if (isCreatingSchemas)
+                                                {
+                                                    <span>⏳</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>➕ Create Schema</span>
+                                                }
+                                            </button>
+                                        }
+                                        else if (schemaStatus.ContainsKey(project.SchemaName) && schemaStatus[project.SchemaName])
+                                        {
+                                            <span style="color: #065f46; font-weight: 500;">
+                                                ✅ Ready
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <button class="lgreeny-btn-secondary" 
+                                                    style="padding: 0.375rem 0.75rem; font-size: 0.875rem;"
+                                                    @onclick="CheckSchemaStatus">
+                                                🔄 Check
+                                            </button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div style="margin-top: 1.5rem; display: flex; gap: 0.75rem;">
+                    <button class="lgreeny-btn-secondary" @onclick="CheckSchemaStatus" disabled="@isCheckingSchemas">
+                        @if (isCheckingSchemas)
+                        {
+                            <span>⏳ Refreshing...</span>
+                        }
+                        else
+                        {
+                            <span>🔄 Refresh Schema Status</span>
+                        }
+                    </button>
+                    
+                    <button class="lgreeny-btn-primary" @onclick="CreateAllMissingSchemas" disabled="@(isCreatingSchemas || !HasMissingSchemas())">
+                        @if (isCreatingSchemas)
+                        {
+                            <span>⏳ Creating...</span>
+                        }
+                        else
+                        {
+                            <span>🗄️ Create All Missing Schemas</span>
+                        }
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Full System Test -->
+    <div class="lgreeny-panel">
+        <div class="panel-header">
+            <h3 class="panel-title">🧪 Full System Test</h3>
+        </div>
+        <div class="panel-body">
+            <div style="display: flex; gap: 0.75rem; align-items: center;">
+                <button class="lgreeny-btn-primary" @onclick="RunFullDiagnostics">
+                    ▶️ Run All Tests
+                </button>
+                <button class="lgreeny-btn-secondary" @onclick="ClearResults">
+                    🔄 Clear Results
+                </button>
+                
+                @if (isRunningDiagnostics)
+                {
+                    <div style="display: flex; align-items: center; gap: 0.5rem; color: #3b82f6; font-weight: 500;">
+                        <span style="font-size: 1.25rem;">⏳</span>
+                        <span>Running diagnostics...</span>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private TestResult? dbConnectionStatus;
+    private DatabaseStatus? projectTableStatus;
+    private TestResult? efTestStatus;
+    private TestResult? schemaTestStatus;
+    private List<Project>? projects;
+    private Dictionary<string, bool> schemaStatus = new();
+    private bool isRunningDiagnostics = false;
+    private bool isCheckingSchemas = false;
+    private bool isCreatingSchemas = false;
+    private bool hasRendered = false;
+    private string? initializationError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Don't use JavaScript during initialization - just load the data
+        await LoadProjects();
+        await CheckSchemaStatusSilent();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            hasRendered = true;
+            
+            // If there was an initialization error, show it now that we can use JavaScript
+            if (!string.IsNullOrEmpty(initializationError))
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Initialization warning: {initializationError}");
+                initializationError = null;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task TestDatabaseConnection()
+    {
+        try
+        {
+            await DbContext.Database.CanConnectAsync();
+            dbConnectionStatus = new TestResult { IsSuccess = true };
+        }
+        catch (Exception ex)
+        {
+            dbConnectionStatus = new TestResult { IsSuccess = false, ErrorMessage = ex.Message };
+        }
+    }
+
+    private async Task CheckProjectTable()
+    {
+        try
+        {
+            projectTableStatus = await MigrationService.GetDatabaseStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            projectTableStatus = new DatabaseStatus { ErrorMessage = ex.Message };
+        }
+    }
+
+    private async Task TestEntityFramework()
+    {
+        try
+        {
+            var projectList = await ProjectService.GetAllProjectsAsync();
+            efTestStatus = new TestResult 
+            { 
+                IsSuccess = true, 
+                ProjectCount = projectList.Count() 
+            };
+        }
+        catch (Exception ex)
+        {
+            efTestStatus = new TestResult { IsSuccess = false, ErrorMessage = ex.Message };
+        }
+    }
+
+    private async Task TestSchemaService()
+    {
+        try
+        {
+            // Test if we can check for a schema (should not throw)
+            await SchemaService.SchemaExistsAsync("test_schema");
+            schemaTestStatus = new TestResult { IsSuccess = true };
+        }
+        catch (Exception ex)
+        {
+            schemaTestStatus = new TestResult { IsSuccess = false, ErrorMessage = ex.Message };
+        }
+    }
+
+    private async Task LoadProjects()
+    {
+        try
+        {
+            var projectList = await ProjectService.GetAllProjectsAsync();
+            projects = projectList.ToList();
+        }
+        catch (Exception ex)
+        {
+            // Store error for later display when JavaScript is available
+            initializationError = $"Error loading projects: {ex.Message}";
+        }
+    }
+
+    private async Task CheckSchemaStatusSilent()
+    {
+        if (projects == null) return;
+        
+        isCheckingSchemas = true;
+        schemaStatus.Clear();
+        
+        try
+        {
+            foreach (var project in projects)
+            {
+                var exists = await SchemaService.SchemaExistsAsync(project.SchemaName);
+                schemaStatus[project.SchemaName] = exists;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Store error for later display when JavaScript is available
+            if (string.IsNullOrEmpty(initializationError))
+            {
+                initializationError = $"Error checking schema status: {ex.Message}";
+            }
+        }
+        finally
+        {
+            isCheckingSchemas = false;
+        }
+    }
+
+    private async Task CheckSchemaStatus()
+    {
+        if (projects == null) return;
+        
+        isCheckingSchemas = true;
+        schemaStatus.Clear();
+        
+        try
+        {
+            foreach (var project in projects)
+            {
+                var exists = await SchemaService.SchemaExistsAsync(project.SchemaName);
+                schemaStatus[project.SchemaName] = exists;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (hasRendered)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error checking schema status: {ex.Message}");
+            }
+            else
+            {
+                initializationError = $"Error checking schema status: {ex.Message}";
+            }
+        }
+        finally
+        {
+            isCheckingSchemas = false;
+        }
+    }
+
+    private async Task CreateProjectSchema(Project project)
+    {
+        isCreatingSchemas = true;
+        
+        try
+        {
+            await SchemaService.CreateProjectSchemaAsync(project.SchemaName);
+            schemaStatus[project.SchemaName] = true;
+            
+            if (hasRendered)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Schema '{project.SchemaName}' created successfully!");
+            }
+        }
+        catch (Exception ex)
+        {
+            if (hasRendered)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error creating schema '{project.SchemaName}': {ex.Message}");
+            }
+        }
+        finally
+        {
+            isCreatingSchemas = false;
+        }
+    }
+
+    private async Task CreateAllMissingSchemas()
+    {
+        if (projects == null) return;
+        
+        if (hasRendered)
+        {
+            var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+                "Create all missing schemas? This will create database schemas and tables for all projects that don't have them yet.");
+            
+            if (!confirmed) return;
+        }
+
+        isCreatingSchemas = true;
+        var createdCount = 0;
+        var errorCount = 0;
+        
+        try
+        {
+            foreach (var project in projects)
+            {
+                if (schemaStatus.ContainsKey(project.SchemaName) && !schemaStatus[project.SchemaName])
+                {
+                    try
+                    {
+                        await SchemaService.CreateProjectSchemaAsync(project.SchemaName);
+                        schemaStatus[project.SchemaName] = true;
+                        createdCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error creating schema '{project.SchemaName}': {ex.Message}");
+                        errorCount++;
+                    }
+                }
+            }
+            
+            if (hasRendered)
+            {
+                var message = $"Schema creation completed!\nCreated: {createdCount} schemas";
+                if (errorCount > 0)
+                {
+                    message += $"\nErrors: {errorCount} schemas failed";
+                }
+                
+                await JSRuntime.InvokeVoidAsync("alert", message);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (hasRendered)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error during bulk schema creation: {ex.Message}");
+            }
+        }
+        finally
+        {
+            isCreatingSchemas = false;
+        }
+    }
+
+    private bool HasMissingSchemas()
+    {
+        return schemaStatus.Values.Any(exists => !exists);
+    }
+
+    private async Task RunFullDiagnostics()
+    {
+        isRunningDiagnostics = true;
+        
+        await TestDatabaseConnection();
+        await CheckProjectTable();
+        await TestEntityFramework();
+        await TestSchemaService();
+        await LoadProjects();
+        await CheckSchemaStatus();
+        
+        isRunningDiagnostics = false;
+        
+        if (hasRendered)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Diagnostics completed! Check the results above.");
+        }
+    }
+
+    private void ClearResults()
+    {
+        dbConnectionStatus = null;
+        projectTableStatus = null;
+        efTestStatus = null;
+        schemaTestStatus = null;
+        projects = null;
+        schemaStatus.Clear();
+        initializationError = null;
+    }
+
+    public class TestResult
+    {
+        public bool IsSuccess { get; set; }
+        public string? ErrorMessage { get; set; }
+        public int ProjectCount { get; set; }
+    }
+}
+
+

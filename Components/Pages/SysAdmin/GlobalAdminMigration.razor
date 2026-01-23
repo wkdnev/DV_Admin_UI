@@ -1,0 +1,304 @@
+@page "/sysadmin/migrate-global-admin"
+@using DV.Shared.Security
+@using DV.Admin.UI.Services
+@inject GlobalAdminMigrationService MigrationService
+@inject IJSRuntime JSRuntime
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@rendermode InteractiveServer
+
+<PageTitle>Global Admin Migration</PageTitle>
+
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="d-flex align-items-center mb-4">
+                <h3 class="mb-0">Global Administrator Migration</h3>
+            </div>
+
+            <div class="alert alert-info">
+                <h5><i class="bi bi-info-circle me-2"></i>About This Migration</h5>
+                <p class="mb-2">
+                    This tool migrates administrators from the old UserRole table system to the new IsGlobalAdmin field system.
+                    This ensures global administrators continue to have access after the UserRole table is removed.
+                </p>
+                <ul class="mb-0">
+                    <li>Users with the "sysadmin" role will be converted to have IsGlobalAdmin = true</li>
+                    <li>This migration is safe to run multiple times</li>
+                    <li>No data is lost during this process</li>
+                </ul>
+            </div>
+
+            <!-- Validation Section -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Step 1: Validate Current State</h5>
+                </div>
+                <div class="card-body">
+                    <p>Check the current state of admin users before migration:</p>
+                    <button class="btn btn-primary" @onclick="ValidateCurrentState" disabled="@isValidating">
+                        @if (isValidating)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                        }
+                        <i class="bi bi-search me-2"></i>
+                        Validate Current State
+                    </button>
+                </div>
+            </div>
+
+            @if (validationResult != null)
+            {
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Validation Results</h5>
+                    </div>
+                    <div class="card-body">
+                        @if (validationResult.Success)
+                        {
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6>Global Admin Users (IsGlobalAdmin = true)</h6>
+                                    @if (validationResult.GlobalAdminUsers.Any())
+                                    {
+                                        <ul class="list-group mb-3">
+                                            @foreach (var user in validationResult.GlobalAdminUsers)
+                                            {
+                                                <li class="list-group-item d-flex justify-content-between">
+                                                    <span>@user.DisplayName (@user.Username)</span>
+                                                    <span class="badge bg-success">Global Admin</span>
+                                                </li>
+                                            }
+                                        </ul>
+                                    }
+                                    else
+                                    {
+                                        <p class="text-muted">No users with IsGlobalAdmin = true found</p>
+                                    }
+                                </div>
+                                <div class="col-md-6">
+                                    <h6>Role-Based Admin Users (UserRole table)</h6>
+                                    @if (validationResult.UserRoleTableExists)
+                                    {
+                                        @if (validationResult.RoleBasedAdminUsers.Any())
+                                        {
+                                            <ul class="list-group mb-3">
+                                                @foreach (var user in validationResult.RoleBasedAdminUsers)
+                                                {
+                                                    <li class="list-group-item d-flex justify-content-between">
+                                                        <span>@user.DisplayName (@user.Username)</span>
+                                                        <span class="badge bg-warning">Role-Based</span>
+                                                    </li>
+                                                }
+                                            </ul>
+                                        }
+                                        else
+                                        {
+                                            <p class="text-muted">No users with Admin role found in UserRole table</p>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <div class="alert alert-warning">
+                                            <i class="bi bi-exclamation-triangle me-2"></i>
+                                            UserRole table not accessible or has been removed
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+
+                            @if (validationResult.OnlyInRoleTable.Any())
+                            {
+                                <div class="alert alert-warning">
+                                    <h6><i class="bi bi-exclamation-triangle me-2"></i>Migration Needed</h6>
+                                    <p>The following users have Admin role but not IsGlobalAdmin = true:</p>
+                                    <ul>
+                                        @foreach (var user in validationResult.OnlyInRoleTable)
+                                        {
+                                            <li>@user.DisplayName (@user.Username)</li>
+                                        }
+                                    </ul>
+                                    <p class="mb-0">Run the migration to fix this.</p>
+                                </div>
+                            }
+                            else if (validationResult.UserRoleTableExists && validationResult.RoleBasedAdminUsers.Any())
+                            {
+                                <div class="alert alert-success">
+                                    <i class="bi bi-check-circle me-2"></i>
+                                    All role-based admin users have been migrated to IsGlobalAdmin = true
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="alert alert-danger">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                Validation failed: @validationResult.ErrorMessage
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrEmpty(validationResult.Notes))
+                        {
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle me-2"></i>
+                                @validationResult.Notes
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <!-- Migration Section -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Step 2: Run Migration</h5>
+                </div>
+                <div class="card-body">
+                    <p>Migrate admin users from UserRole table to IsGlobalAdmin field:</p>
+                    <button class="btn btn-success" @onclick="RunMigration" disabled="@isMigrating">
+                        @if (isMigrating)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2"></span>
+                        }
+                        <i class="bi bi-arrow-right-circle me-2"></i>
+                        Run Migration
+                    </button>
+                </div>
+            </div>
+
+            @if (migrationResult != null)
+            {
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Migration Results</h5>
+                    </div>
+                    <div class="card-body">
+                        @if (migrationResult.Success)
+                        {
+                            <div class="alert alert-success">
+                                <h6><i class="bi bi-check-circle me-2"></i>Migration Completed Successfully!</h6>
+                                <ul class="mb-0">
+                                    <li><strong>Migrated:</strong> @migrationResult.MigratedUsers.Count users</li>
+                                    <li><strong>Already migrated:</strong> @migrationResult.AlreadyMigratedUsers.Count users</li>
+                                    <li><strong>Failed:</strong> @migrationResult.FailedUsers.Count users</li>
+                                </ul>
+                            </div>
+
+                            @if (migrationResult.MigratedUsers.Any())
+                            {
+                                <h6>Successfully Migrated Users</h6>
+                                <ul class="list-group mb-3">
+                                    @foreach (var user in migrationResult.MigratedUsers)
+                                    {
+                                        <li class="list-group-item d-flex justify-content-between">
+                                            <span>@user.DisplayName (@user.Username)</span>
+                                            <span class="badge bg-success">Migrated</span>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+
+                            @if (migrationResult.AlreadyMigratedUsers.Any())
+                            {
+                                <h6>Already Migrated Users</h6>
+                                <ul class="list-group mb-3">
+                                    @foreach (var user in migrationResult.AlreadyMigratedUsers)
+                                    {
+                                        <li class="list-group-item d-flex justify-content-between">
+                                            <span>@user.DisplayName (@user.Username)</span>
+                                            <span class="badge bg-info">Already Migrated</span>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+
+                            @if (migrationResult.FailedUsers.Any())
+                            {
+                                <h6>Failed Migrations</h6>
+                                <div class="alert alert-danger">
+                                    @foreach (var failed in migrationResult.FailedUsers)
+                                    {
+                                        <div>
+                                            <strong>@failed.User.DisplayName (@failed.User.Username)</strong>: @failed.ErrorMessage
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            <div class="mt-3">
+                                <button class="btn btn-primary" @onclick="ValidateCurrentState">
+                                    <i class="bi bi-arrow-clockwise me-2"></i>
+                                    Re-validate After Migration
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="alert alert-danger">
+                                <h6><i class="bi bi-exclamation-triangle me-2"></i>Migration Failed</h6>
+                                <p class="mb-0">@migrationResult.ErrorMessage</p>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isValidating = false;
+    private bool isMigrating = false;
+    private ValidationResult? validationResult;
+    private MigrationResult? migrationResult;
+
+    private async Task ValidateCurrentState()
+    {
+        isValidating = true;
+        validationResult = null;
+
+        try
+        {
+            validationResult = await MigrationService.ValidateMigrationAsync();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Validation failed: {ex.Message}");
+        }
+        finally
+        {
+            isValidating = false;
+        }
+    }
+
+    private async Task RunMigration()
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            "Are you sure you want to run the global admin migration? This will update user accounts to use the new IsGlobalAdmin field.");
+
+        if (!confirmed) return;
+
+        isMigrating = true;
+        migrationResult = null;
+
+        try
+        {
+            migrationResult = await MigrationService.MigrateAdminUsersAsync();
+            
+            if (migrationResult.Success)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", 
+                    $"Migration completed! Migrated {migrationResult.MigratedUsers.Count} users, {migrationResult.AlreadyMigratedUsers.Count} were already migrated.");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Migration failed: {ex.Message}");
+        }
+        finally
+        {
+            isMigrating = false;
+        }
+    }
+}
+
+

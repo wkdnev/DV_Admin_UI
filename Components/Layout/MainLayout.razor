@@ -1,0 +1,55 @@
+@using DV.Admin.UI.Components.Layout
+@using DV.Admin.UI.Components.Documents
+@using DV.Admin.UI.Services
+@using DV.Admin.UI.Security
+@inject PersistentComponentState ApplicationState
+@inject TokenProvider TokenProvider
+@inherits LayoutComponentBase
+
+<div class="page">
+
+   <!-- <div class="sidebar">
+        <NavMenu />
+    </div> -->
+
+    <main>
+        <div class="top-row px-4 d-flex align-items-center justify-content-end">
+            <div class="d-flex align-items-center gap-3">
+                <a href="/select-role" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-person-badge me-1"></i>
+                    Select Role
+                </a>
+                <div class="navbar-nav">
+                    <RoleSelector />
+                    <SessionStatus ShowForAdmins="true" />
+                </div>
+                @* Bad File button for ReadOnly role *@
+                <BadFileButton />
+                <a href="https://learn.microsoft.com/aspnet/core/" target="_blank" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-info-circle me-1"></i>
+                    About
+                </a>
+            </div>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">??</a>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        if (ApplicationState.TryTakeFromJson<string>("AccessToken", out var savedToken))
+        {
+            TokenProvider.AccessToken = savedToken;
+        }
+    }
+}

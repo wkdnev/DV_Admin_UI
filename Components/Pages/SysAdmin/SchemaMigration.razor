@@ -1,0 +1,340 @@
+@page "/sysadmin/schema-migration"
+@rendermode InteractiveServer
+@using DV.Admin.UI.Services
+@using DV.Shared.Models
+@using Microsoft.EntityFrameworkCore
+@inject SchemaService SchemaService
+@inject AppDbContext AppDbContext
+@inject NavigationManager Navigation
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "GlobalAdminOnly")]
+
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2><i class="bi bi-database-gear"></i> Schema Migration</h2>
+                    <p class="text-muted">Migrate existing project schemas to include new Document and DocumentPage fields</p>
+                </div>
+                <button class="btn btn-secondary" @onclick="BackToAdmin">
+                    <i class="bi bi-arrow-left"></i> Back to Admin
+                </button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill"></i> @errorMessage
+                    <button type="button" class="btn-close" @onclick="() => errorMessage = null"></button>
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(successMessage))
+            {
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="bi bi-check-circle-fill"></i> @successMessage
+                    <button type="button" class="btn-close" @onclick="() => successMessage = null"></button>
+                </div>
+            }
+
+            <!-- Migration Overview -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-info-circle"></i> Migration Overview</h5>
+                </div>
+                <div class="card-body">
+                    <h6>What This Migration Does:</h6>
+                    <ul>
+                        <li><strong>Document Table:</strong> Adds 37 new fields including custom extensibility fields (Text01-12, Date01-04, Boolean01-03, Number01-03), reference fields, and enhanced audit tracking</li>
+                        <li><strong>DocumentPage Table:</strong> Adds 12 new fields including DocumentIndex, hierarchy levels (Level1-4), and audit fields</li>
+                        <li><strong>Backward Compatible:</strong> All new columns are nullable (except audit fields with defaults), existing data is preserved</li>
+                        <li><strong>Safe Operation:</strong> Uses IF NOT EXISTS checks to prevent duplicate columns</li>
+                    </ul>
+
+                    <h6 class="mt-3">Fields Being Added:</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6 class="text-primary">Document Table:</h6>
+                            <ul class="small">
+                                <li>DocumentIndex, Issue, DocumentStatus, DocumentDate</li>
+                                <li>Custom: Text01-12, Date01-04, Boolean01-03, Number01-03</li>
+                                <li>Reference: OldDM, CM, GM, EM</li>
+                                <li>Audit: CreatedBy, ModifiedOn, ModifiedDate</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6 class="text-primary">DocumentPage Table:</h6>
+                            <ul class="small">
+                                <li>DocumentIndex (required)</li>
+                                <li>FrameNumber, DiskNumber</li>
+                                <li>Hierarchy: Level1, Level2, Level3, Level4</li>
+                                <li>FileFormat, PageSize</li>
+                                <li>Audit: CreatedOn, CreatedBy, ModifiedOn, ModifiedBy</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Schema List -->
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="bi bi-list-ul"></i> Detected Schemas</h5>
+                </div>
+                <div class="card-body">
+                    @if (isLoadingSchemas)
+                    {
+                        <div class="text-center py-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Detecting schemas...</p>
+                        </div>
+                    }
+                    else if (detectedSchemas != null && detectedSchemas.Any())
+                    {
+                        <div class="alert alert-info">
+                            <strong>Found @detectedSchemas.Count schema(s) with Document tables:</strong>
+                            @string.Join(", ", detectedSchemas)
+                        </div>
+                        
+                        <p class="text-muted small">
+                            These schemas will be migrated when you click the "Run Migration" button below.
+                        </p>
+                    }
+                    else
+                    {
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle"></i> No schemas detected. Click "Detect Schemas" to scan the database.
+                        </div>
+                    }
+
+                    <button class="btn btn-outline-primary" @onclick="DetectSchemas" disabled="@isLoadingSchemas">
+                        <i class="bi bi-search"></i> @(isLoadingSchemas ? "Detecting..." : "Detect Schemas")
+                    </button>
+                </div>
+            </div>
+
+            <!-- Migration Actions -->
+            <div class="card mb-4 border-warning">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0"><i class="bi bi-exclamation-triangle-fill"></i> Migration Actions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-warning">
+                        <h6><i class="bi bi-shield-exclamation"></i> Important Reminders:</h6>
+                        <ul class="mb-0">
+                            <li><strong>Backup First:</strong> Ensure you have a recent database backup</li>
+                            <li><strong>Test Environment:</strong> Test in development before running in production</li>
+                            <li><strong>Downtime:</strong> Migration may take a few seconds per schema</li>
+                            <li><strong>Cannot Undo:</strong> This operation adds columns - have a rollback plan ready</li>
+                        </ul>
+                    </div>
+
+                    <div class="d-flex gap-2 align-items-center">
+                        <button class="btn btn-success btn-lg" 
+                                @onclick="RunMigration" 
+                                disabled="@(isMigrating || detectedSchemas == null || !detectedSchemas.Any())">
+                            <i class="bi bi-database-add"></i> @(isMigrating ? "Migrating..." : "Run Migration")
+                        </button>
+
+                        @if (isMigrating)
+                        {
+                            <div class="spinner-border text-success ms-2" role="status">
+                                <span class="visually-hidden">Migrating...</span>
+                            </div>
+                            <span class="text-muted">Please wait, migration in progress...</span>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Migration Log -->
+            @if (migrationLogs.Any())
+            {
+                <div class="card">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0"><i class="bi bi-terminal"></i> Migration Log</h5>
+                    </div>
+                    <div class="card-body bg-light">
+                        <div class="migration-log p-3" style="max-height: 400px; overflow-y: auto; background-color: #1e1e1e; color: #d4d4d4; font-family: 'Consolas', monospace; font-size: 0.85rem; border-radius: 4px;">
+                            @foreach (var log in migrationLogs)
+                            {
+                                <div class="mb-1" style="color: @GetLogColor(log)">
+                                    <span style="color: #808080;">[@log.Timestamp.ToString("HH:mm:ss")]</span> @log.Message
+                                </div>
+                            }
+                        </div>
+                        <button class="btn btn-sm btn-outline-secondary mt-2" @onclick="ClearLog">
+                            <i class="bi bi-trash"></i> Clear Log
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<string> detectedSchemas = new();
+    private List<MigrationLogEntry> migrationLogs = new();
+    private bool isLoadingSchemas = false;
+    private bool isMigrating = false;
+    private string? errorMessage;
+    private string? successMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await DetectSchemas();
+    }
+
+    private void BackToAdmin()
+    {
+        Navigation.NavigateTo("/sysadmin");
+    }
+
+    private async Task DetectSchemas()
+    {
+        isLoadingSchemas = true;
+        errorMessage = null;
+        detectedSchemas.Clear();
+        StateHasChanged();
+
+        try
+        {
+            AddLog("Scanning database for schemas with Document tables...");
+
+            var getSchemasQuery = @"
+                SELECT DISTINCT s.name
+                FROM sys.schemas s
+                INNER JOIN sys.tables t ON t.schema_id = s.schema_id
+                WHERE t.name = 'Document'
+                AND s.name NOT IN ('dbo', 'sys', 'guest', 'INFORMATION_SCHEMA')
+                ORDER BY s.name";
+
+            var schemaResults = await AppDbContext.Database.SqlQueryRaw<SchemaNameResult>(getSchemasQuery).ToListAsync();
+            detectedSchemas = schemaResults.Select(s => s.Name).ToList();
+
+            AddLog($"Found {detectedSchemas.Count} schema(s): {string.Join(", ", detectedSchemas)}", "success");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error detecting schemas: {ex.Message}";
+            AddLog($"ERROR: {ex.Message}", "error");
+        }
+        finally
+        {
+            isLoadingSchemas = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RunMigration()
+    {
+        if (detectedSchemas == null || !detectedSchemas.Any())
+        {
+            errorMessage = "No schemas detected. Please click 'Detect Schemas' first.";
+            return;
+        }
+
+        isMigrating = true;
+        errorMessage = null;
+        successMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            AddLog("=".PadRight(80, '='), "info");
+            AddLog("Starting schema migration...", "info");
+            AddLog("=".PadRight(80, '='), "info");
+
+            int successCount = 0;
+            int failureCount = 0;
+
+            foreach (var schema in detectedSchemas)
+            {
+                try
+                {
+                    AddLog($"Migrating schema: {schema}", "info");
+                    await SchemaService.MigrateExistingSchemaAsync(schema);
+                    AddLog($"✓ Successfully migrated schema: {schema}", "success");
+                    successCount++;
+                }
+                catch (Exception ex)
+                {
+                    AddLog($"✗ Error migrating schema {schema}: {ex.Message}", "error");
+                    failureCount++;
+                }
+
+                StateHasChanged();
+                await Task.Delay(100); // Brief pause for UI update
+            }
+
+            AddLog("=".PadRight(80, '='), "info");
+            AddLog($"Migration complete! Success: {successCount}, Failures: {failureCount}", successCount == detectedSchemas.Count ? "success" : "warning");
+            AddLog("=".PadRight(80, '='), "info");
+
+            if (failureCount == 0)
+            {
+                successMessage = $"Successfully migrated all {successCount} schema(s)! All Document and DocumentPage tables now have the new fields.";
+            }
+            else
+            {
+                errorMessage = $"Migration completed with {failureCount} failure(s). Check the log for details.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Migration failed: {ex.Message}";
+            AddLog($"FATAL ERROR: {ex.Message}", "error");
+        }
+        finally
+        {
+            isMigrating = false;
+            StateHasChanged();
+        }
+    }
+
+    private void AddLog(string message, string level = "info")
+    {
+        migrationLogs.Add(new MigrationLogEntry
+        {
+            Timestamp = DateTime.Now,
+            Message = message,
+            Level = level
+        });
+    }
+
+    private void ClearLog()
+    {
+        migrationLogs.Clear();
+        StateHasChanged();
+    }
+
+    private string GetLogColor(MigrationLogEntry log)
+    {
+        return log.Level switch
+        {
+            "error" => "#f48771",
+            "success" => "#89d185",
+            "warning" => "#f9c859",
+            "info" => "#4fc1ff",
+            _ => "#d4d4d4"
+        };
+    }
+
+    private class MigrationLogEntry
+    {
+        public DateTime Timestamp { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public string Level { get; set; } = "info";
+    }
+
+    private class SchemaNameResult
+    {
+        public string Name { get; set; } = string.Empty;
+    }
+}
+
+
+

@@ -1,0 +1,270 @@
+@page "/sysadmin/database-update"
+@using DV.Admin.UI.Services
+@using Microsoft.AspNetCore.Authorization
+@inject DatabaseMigrationService MigrationService
+@inject IJSRuntime JSRuntime
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@rendermode InteractiveServer
+
+<PageTitle>Database Update Utility</PageTitle>
+
+<h3>Database Update Utility</h3>
+
+<div class="alert alert-warning">
+    <h5><i class="bi bi-exclamation-triangle"></i> Warning</h5>
+    <p>This utility is for updating the database schema to support the new project-based architecture. Only run this once during migration.</p>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">Project Table Schema Management</h5>
+    </div>
+    <div class="card-body">
+        @if (isLoading)
+        {
+            <div class="text-center">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-2">Checking database status...</p>
+            </div>
+        }
+        else if (migrationNeeded == null)
+        {
+            <p>Click "Check Database Status" to verify the current state of the Project table.</p>
+            <button class="btn btn-info" @onclick="CheckMigrationStatus" disabled="@isChecking">
+                @if (isChecking)
+                {
+                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                    <span>Checking...</span>
+                }
+                else
+                {
+                    <i class="bi bi-search"></i>
+                    <span>Check Database Status</span>
+                }
+            </button>
+        }
+        else if (migrationNeeded == false)
+        {
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle"></i> Database is already up to date! No migration needed.
+            </div>
+            <p>The Project table exists and contains all required columns for schema architecture:</p>
+            <ul>
+                <li>ProjectId (int, Identity, Primary Key) ?</li>
+                <li>ProjectCode (nvarchar(50), NOT NULL, Unique) ?</li>
+                <li>ProjectName (nvarchar(255), NOT NULL) ?</li>
+                <li>FolderPath (nvarchar(500), NULL) ?</li>
+                <li>ReadPrincipal (nvarchar(255), NULL) ?</li>
+                <li>EditPrincipal (nvarchar(255), NULL) ?</li>
+                <li>SchemaName (nvarchar(128), NOT NULL, Unique) ?</li>
+                <li>Description (nvarchar(1000), NULL) ?</li>
+                <li>CreatedDate (datetime2, NOT NULL) ?</li>
+                <li>IsActive (bit, NOT NULL) ?</li>
+            </ul>
+            
+            @if (projectCount.HasValue)
+            {
+                <p class="mt-3"><strong>Current projects in database:</strong> @projectCount</p>
+                @if (projectCount == 0)
+                {
+                    <button class="btn btn-secondary" @onclick="CreateSampleProjects" disabled="@isCreatingSamples">
+                        @if (isCreatingSamples)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                            <span>Creating...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-plus-circle"></i>
+                            <span>Create Sample Projects</span>
+                        }
+                    </button>
+                }
+            }
+        }
+        else
+        {
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i> 
+                @if (tableExists == false)
+                {
+                    <text><strong>Project table does not exist.</strong> This will create a completely new Project table with the schema architecture.</text>
+                }
+                else
+                {
+                    <text><strong>Project table exists but needs updates.</strong> This will add missing columns for the schema architecture.</text>
+                }
+            </div>
+            
+            @if (tableExists == false)
+            {
+                <p>This will create a new Project table with the following structure:</p>
+            }
+            else
+            {
+                <p>This will add the following missing columns to the existing Project table:</p>
+            }
+            
+            <ul>
+                <li>ProjectId (int, Identity, Primary Key)</li>
+                <li>ProjectCode (nvarchar(50), NOT NULL, Unique)</li>
+                <li>ProjectName (nvarchar(255), NOT NULL)</li>
+                <li>FolderPath (nvarchar(500), NULL)</li>
+                <li>ReadPrincipal (nvarchar(255), NULL)</li>
+                <li>EditPrincipal (nvarchar(255), NULL)</li>
+                <li>SchemaName (nvarchar(128), NOT NULL, Unique) - Database schema name for the project</li>
+                <li>Description (nvarchar(1000), NULL) - Optional project description</li>
+                <li>CreatedDate (datetime2, NOT NULL) - Project creation date</li>
+                <li>IsActive (bit, NOT NULL) - Whether the project is active</li>
+            </ul>
+            
+            @if (projectCount.HasValue && projectCount > 0)
+            {
+                <p class="mt-3"><strong>Existing projects to be updated:</strong> @projectCount</p>
+            }
+            
+            @if (updateCompleted)
+            {
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle"></i> Database update completed successfully!
+                    @if (projectCount == 0)
+                    {
+                        <text><br /><strong>Next step:</strong> Create some sample projects to test the new schema architecture.</text>
+                    }
+                </div>
+            }
+            
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-circle"></i> Error: @errorMessage
+                </div>
+            }
+            
+            <button class="btn btn-primary" @onclick="UpdateDatabase" disabled="@isUpdating">
+                @if (isUpdating)
+                {
+                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                    <span>@(tableExists == false ? "Creating Table..." : "Updating Table...")</span>
+                }
+                else
+                {
+                    <i class="bi bi-database-gear"></i>
+                    <span>@(tableExists == false ? "Create Project Table" : "Update Project Table")</span>
+                }
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    private bool isLoading = true;
+    private bool isChecking = false;
+    private bool isUpdating = false;
+    private bool isCreatingSamples = false;
+    private bool updateCompleted = false;
+    private bool? migrationNeeded = null;
+    private bool? tableExists = null;
+    private int? projectCount = null;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CheckMigrationStatus();
+    }
+
+    private async Task CheckMigrationStatus()
+    {
+        isChecking = true;
+        errorMessage = null;
+
+        try
+        {
+            tableExists = await MigrationService.CheckIfProjectTableExistsAsync();
+            migrationNeeded = await MigrationService.CheckIfMigrationNeededAsync();
+            projectCount = await MigrationService.GetProjectCountAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            migrationNeeded = null;
+            tableExists = null;
+            projectCount = null;
+        }
+        finally
+        {
+            isChecking = false;
+            isLoading = false;
+        }
+    }
+
+    private async Task UpdateDatabase()
+    {
+        var confirmMessage = tableExists == false 
+            ? "Are you sure you want to create the Project table? This will set up the new schema architecture."
+            : "Are you sure you want to update the database? This will modify the Project table structure.";
+            
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", confirmMessage);
+        
+        if (!confirmed) return;
+
+        isUpdating = true;
+        errorMessage = null;
+        updateCompleted = false;
+
+        try
+        {
+            await MigrationService.ExecuteProjectSchemaMigrationAsync();
+            updateCompleted = true;
+            migrationNeeded = false; // Update the status
+            tableExists = true;
+            
+            // Refresh project count
+            projectCount = await MigrationService.GetProjectCountAsync();
+            
+            var successMessage = tableExists == false 
+                ? "Project table created successfully!"
+                : "Database update completed successfully!";
+                
+            await JSRuntime.InvokeVoidAsync("alert", successMessage);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            await JSRuntime.InvokeVoidAsync("alert", $"Error updating database: {ex.Message}");
+        }
+        finally
+        {
+            isUpdating = false;
+        }
+    }
+
+    private async Task CreateSampleProjects()
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            "Create sample projects (Invoices, Correspondence, Bills)? This will help you test the new schema architecture.");
+        
+        if (!confirmed) return;
+
+        isCreatingSamples = true;
+        errorMessage = null;
+
+        try
+        {
+            await MigrationService.CreateSampleProjectsAsync();
+            projectCount = await MigrationService.GetProjectCountAsync();
+            await JSRuntime.InvokeVoidAsync("alert", "Sample projects created successfully!");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            await JSRuntime.InvokeVoidAsync("alert", $"Error creating sample projects: {ex.Message}");
+        }
+        finally
+        {
+            isCreatingSamples = false;
+        }
+    }
+}
+
+

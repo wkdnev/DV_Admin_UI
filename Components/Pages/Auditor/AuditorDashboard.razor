@@ -1,0 +1,21 @@
+@page "/auditor-dashboard"
+@using DV.Shared.Constants
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = Roles.AuditorGroup)]
+
+<PageTitle>Auditor Dashboard</PageTitle>
+
+<div class="container mt-4">
+    <div class="card border-info mb-3">
+        <div class="card-header bg-info text-white">
+            <h3><i class="bi bi-clipboard-check"></i> Auditor Dashboard</h3>
+        </div>
+        <div class="card-body">
+            <h5 class="card-title">Welcome, Auditor</h5>
+            <p class="card-text">You have access to view audit logs, compliance reports, and read-only project data.</p>
+            <div class="alert alert-info">
+                This area is restricted to members of <strong>@Roles.AuditorGroup</strong>.
+            </div>
+        </div>
+    </div>
+</div>

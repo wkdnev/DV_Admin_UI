@@ -1,0 +1,288 @@
+@page "/sysadmin/fresh-start"
+@using DV.Admin.UI.Services
+@using DV.Admin.UI.Data
+@using Microsoft.AspNetCore.Authorization
+@inject ProjectService ProjectService
+@inject ProjectRoleService ProjectRoleService
+@inject ProjectRoleSeeder ProjectRoleSeeder
+@inject SchemaService SchemaService
+@inject IJSRuntime JSRuntime
+@using DV.Shared.Models
+@using DV.Shared.Security
+@inject UserService UserService
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@rendermode InteractiveServer
+
+<PageTitle>Fresh Start - Project RBAC Setup</PageTitle>
+
+<div class="container mt-4">
+    <h3 class="mb-4">Fresh Start - Project-Scoped RBAC Setup</h3>
+    
+    <div class="row">
+        <div class="col-12">
+            <div class="alert alert-warning">
+                <h5><i class="bi bi-exclamation-triangle"></i> ?? Warning - Fresh Start</h5>
+                <p>This utility will <strong>completely reset</strong> your project and role data:</p>
+                <ul>
+                    <li><strong>Delete all existing projects</strong> and their database schemas</li>
+                    <li><strong>Remove all project roles</strong> and user assignments</li>
+                    <li><strong>Create fresh sample data</strong> with clean project-scoped RBAC</li>
+                </ul>
+                <p class="mb-0"><strong>This action cannot be undone!</strong> Only use this if you want to start completely fresh.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">Fresh Start Options</h6>
+                </div>
+                <div class="card-body">
+                    @if (isProcessing)
+                    {
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                            <span>@currentStep</span>
+                        </div>
+                        <div class="mt-3">
+                            <div class="progress">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                     role="progressbar" style="width: @progressPercent%"></div>
+                            </div>
+                        </div>
+                        @if (!string.IsNullOrEmpty(currentOperation))
+                        {
+                            <div class="mt-2">
+                                <small class="text-muted">@currentOperation</small>
+                            </div>
+                        }
+                    }
+                    else if (resetComplete)
+                    {
+                        <div class="alert alert-success">
+                            <i class="bi bi-check-circle me-2"></i>
+                            <strong>Fresh Start Complete!</strong>
+                            <p class="mb-0">Your project-scoped RBAC system has been reset and initialized with clean sample data.</p>
+                        </div>
+                        <div class="mt-3">
+                            <a href="/sysadmin/project-roles" class="btn btn-primary">
+                                <i class="bi bi-diagram-3 me-2"></i>
+                                Manage Project Roles
+                            </a>
+                            <a href="/sysadmin/projects" class="btn btn-secondary ms-2">
+                                <i class="bi bi-folder me-2"></i>
+                                View Projects
+                            </a>
+                        </div>
+                    }
+                    else if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>Reset Failed</strong>
+                            <p class="mb-0">@errorMessage</p>
+                        </div>
+                        <button class="btn btn-warning" @onclick="ResetState">
+                            Try Again
+                        </button>
+                    }
+                    else
+                    {
+                        <div class="mb-4">
+                            <h6>What will be created after reset:</h6>
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="card border-primary">
+                                        <div class="card-body">
+                                            <h6 class="card-title text-primary">Sample Projects</h6>
+                                            <ul class="small mb-0">
+                                                <li>Invoices (Finance documents)</li>
+                                                <li>Correspondence (Communications)</li>
+                                                <li>HR (Human Resources)</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card border-success">
+                                        <div class="card-body">
+                                            <h6 class="card-title text-success">Application Roles</h6>
+                                            <ul class="small mb-0">
+                                                <li>Admin (Full access)</li>
+                                                <li>Editor (Edit documents)</li>
+                                                <li>Auditor (View for auditing)</li>
+                                                <li>ReadOnly (View only)</li>
+                                                <li>DataOwner (Data governance)</li>
+                                                <li>Security (Security monitoring)</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card border-warning">
+                                        <div class="card-body">
+                                            <h6 class="card-title text-warning">Project Roles</h6>
+                                            <ul class="small mb-0">
+                                                <li>Each project gets all role types</li>
+                                                <li>Custom permissions per project</li>
+                                                <li>Ready for user assignments</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-danger btn-lg" @onclick="ConfirmFreshStart">
+                                <i class="bi bi-arrow-clockwise me-2"></i>
+                                Start Fresh - Delete All & Recreate
+                            </button>
+                            <a href="/sysadmin/seed-project-roles" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-left me-2"></i>
+                                Back to Normal Setup
+                            </a>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private bool isProcessing = false;
+    private bool resetComplete = false;
+    private string? errorMessage;
+    private string currentStep = "";
+    private string currentOperation = "";
+    private int progressPercent = 0;
+
+    private async Task ConfirmFreshStart()
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            "?? FINAL WARNING ??\n\n" +
+            "This will PERMANENTLY DELETE:\n" +
+            "� All existing projects\n" +
+            "� All project database schemas\n" +
+            "� All project role assignments\n" +
+            "� All document data in project schemas\n\n" +
+            "Are you absolutely sure you want to proceed?\n\n" +
+            "Type 'DELETE' to confirm this destructive action.");
+        
+        if (!confirmed) return;
+
+        // Double confirmation for safety
+        var deleteConfirmed = await JSRuntime.InvokeAsync<string>("prompt", 
+            "Type 'DELETE' to confirm (case sensitive):");
+        
+        if (deleteConfirmed != "DELETE")
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Fresh start cancelled - confirmation text didn't match.");
+            return;
+        }
+
+        await PerformFreshStart();
+    }
+
+    private async Task PerformFreshStart()
+    {
+        isProcessing = true;
+        errorMessage = null;
+        progressPercent = 0;
+        
+        try
+        {
+            // Step 1: Delete all existing projects and schemas
+            currentStep = "Step 1/4: Cleaning up existing projects...";
+            currentOperation = "Loading existing projects";
+            progressPercent = 10;
+            StateHasChanged();
+            await Task.Delay(500); // Brief pause for UI
+
+            var existingProjects = (await ProjectService.GetAllProjectsAsync()).ToList();
+            Console.WriteLine($"Found {existingProjects.Count} existing projects to delete");
+            
+            foreach (var project in existingProjects)
+            {
+                currentOperation = $"Deleting project: {project.ProjectName}";
+                StateHasChanged();
+                Console.WriteLine($"Deleting project: {project.ProjectName} (Schema: {project.SchemaName})");
+                
+                try
+                {
+                    await ProjectService.DeleteProjectAsync(project.ProjectId);
+                    Console.WriteLine($"? Deleted project: {project.ProjectName}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error deleting project {project.ProjectName}: {ex.Message}");
+                    // Continue with other projects even if one fails
+                }
+            }
+            
+            progressPercent = 25;
+            StateHasChanged();
+
+            // Step 2: Create sample roles
+            currentStep = "Step 2/4: Setting up application roles...";
+            currentOperation = "Creating base application roles";
+            progressPercent = 40;
+            StateHasChanged();
+            await Task.Delay(500);
+
+            await ProjectRoleSeeder.SeedAsync();
+            
+            progressPercent = 75;
+
+            // Step 3: Final verification
+            currentStep = "Step 3/4: Verifying setup...";
+            currentOperation = "Checking created projects and roles";
+            progressPercent = 90;
+            StateHasChanged();
+            await Task.Delay(500);
+
+            var newProjects = (await ProjectService.GetAllProjectsAsync()).ToList();
+            Console.WriteLine($"Fresh start completed - {newProjects.Count} projects created");
+
+            // Step 4: Complete
+            currentStep = "Step 4/4: Complete!";
+            currentOperation = "Fresh start completed successfully";
+            progressPercent = 100;
+            StateHasChanged();
+            await Task.Delay(1000);
+
+            resetComplete = true;
+            await JSRuntime.InvokeVoidAsync("alert", 
+                $"Fresh start completed successfully!\n\n" +
+                $"Created {newProjects.Count} sample projects with project-scoped RBAC.\n" +
+                $"You can now assign users to project roles.");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            Console.WriteLine($"Error during fresh start: {ex.Message}");
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            await JSRuntime.InvokeVoidAsync("alert", $"Error during fresh start: {ex.Message}");
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private void ResetState()
+    {
+        isProcessing = false;
+        resetComplete = false;
+        errorMessage = null;
+        currentStep = "";
+        currentOperation = "";
+        progressPercent = 0;
+    }
+}
+
+
+

@@ -1,0 +1,79 @@
+@{
+    Layout = null;
+    var errorMessage = ViewData["ErrorMessage"]?.ToString() ?? "An authentication error occurred.";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Authentication Error - DocViewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .error-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 48px;
+            width: 100%;
+            max-width: 480px;
+            text-align: center;
+        }
+        .error-icon {
+            font-size: 64px;
+            margin-bottom: 24px;
+        }
+        h1 {
+            color: #dc2626;
+            font-size: 24px;
+            margin-bottom: 16px;
+        }
+        .error-message {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: 16px;
+            color: #991b1b;
+            font-size: 14px;
+            margin-bottom: 24px;
+            word-break: break-word;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <div class="error-icon">⚠️</div>
+        <h1>Authentication Error</h1>
+        <div class="error-message">@errorMessage</div>
+        <a href="/auth/login" class="btn btn-primary">Try Again</a>
+    </div>
+</body>
+</html>

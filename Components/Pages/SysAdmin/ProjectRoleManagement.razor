@@ -1,0 +1,482 @@
+@page "/sysadmin/project-roles"
+@page "/sysadmin/project-roles/{ProjectIdParam:int?}"
+@using DV.Shared.Security
+@using DV.Shared.Models
+@using DV.Admin.UI.Services
+@using DV.Admin.UI.Infrastructure.Caching
+@using Microsoft.AspNetCore.Authorization
+@inject ProjectRoleService ProjectRoleService
+@inject RoleService RoleService
+@inject ProjectService ProjectService
+@inject UserService UserService
+@inject ICacheService CacheService
+@inject IJSRuntime JSRuntime
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@rendermode InteractiveServer
+
+<PageTitle>Project Role Management</PageTitle>
+
+<div class="lgreeny-dashboard">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+            <h2 style="margin: 0; color: #1e293b; font-size: 1.75rem; font-weight: 600;">🎭 Project Role Management</h2>
+            <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.875rem;">Manage project-specific roles</p>
+        </div>
+        <button class="lgreeny-btn-primary" style="width: auto;" @onclick="OpenCreateProjectRoleDialog">
+            ➕ Create Project Role
+        </button>
+    </div>
+
+@if (isLoading)
+{
+    <div style="text-align: center; padding: 2rem;">
+        <div style="color: #3b82f6; font-size: 1.5rem;">⏳</div>
+        <p style="color: #64748b; margin-top: 0.5rem;">Loading project roles...</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.5rem; margin-bottom: 1.5rem; color: #991b1b;">
+        ⚠️ @errorMessage
+    </div>
+}
+else
+{
+    <!-- Project Selection -->
+    <div class="lgreeny-panel" style="margin-bottom: 1.5rem; max-width: 600px;">
+        <div class="panel-header">
+            <h3 class="panel-title">📋 Select Project</h3>
+        </div>
+        <div class="panel-body">
+            <select style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" 
+                    @bind="selectedProjectId" @bind:after="LoadProjectRoles">
+                <option value="">-- Select Project --</option>
+                @if (projects != null)
+                {
+                    @foreach (var project in projects)
+                    {
+                        <option value="@project.ProjectId">@project.ProjectName (@project.SchemaName)</option>
+                    }
+                }
+            </select>
+        </div>
+    </div>
+
+    @if (selectedProjectId.HasValue && projectRoles != null)
+    {
+        <!-- Project Roles Table -->
+        <div class="lgreeny-panel">
+            <div class="panel-header">
+                <h3 class="panel-title">
+                    👥 Project Roles for @(projects?.FirstOrDefault(p => p.ProjectId == selectedProjectId)?.ProjectName)
+                </h3>
+            </div>
+            <div class="panel-body">
+                @if (projectRoles.Count == 0)
+                {
+                    <div style="padding: 1rem; background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 0.5rem; color: #1e40af;">
+                        ℹ️ No roles have been created for this project yet. Click "Create Project Role" to get started.
+                    </div>
+                }
+                else
+                {
+                    <table class="lgreeny-table">
+                            <thead>
+                                <tr>
+                                    <th>Role Name</th>
+                                    <th>Base Role</th>
+                                    <th>Description</th>
+                                    <th>Users</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var projectRole in projectRoles)
+                                {
+                                    <tr>
+                                        <td><strong style="color: #1e293b;">@projectRole.DisplayName</strong></td>
+                                        <td>
+                                            <span style="padding: 0.25rem 0.75rem; background: #f1f5f9; color: #475569; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500;">
+                                                @projectRole.ApplicationRole?.Name
+                                            </span>
+                                        </td>
+                                        <td style="color: #64748b;">@projectRole.Description</td>
+                                        <td>
+                                            @if (projectRoleUsers.ContainsKey(projectRole.ProjectRoleId))
+                                            {
+                                                <span style="padding: 0.25rem 0.75rem; background: #dbeafe; color: #1e40af; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500;">
+                                                    👥 @projectRoleUsers[projectRole.ProjectRoleId].Count users
+                                                </span>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (projectRole.IsActive)
+                                            {
+                                                <span style="padding: 0.25rem 0.75rem; background: #d1fae5; color: #065f46; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500;">
+                                                    Active
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span style="padding: 0.25rem 0.75rem; background: #f1f5f9; color: #475569; border-radius: 0.375rem; font-size: 0.875rem; font-weight: 500;">
+                                                    Inactive
+                                                </span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <div style="display: flex; gap: 0.5rem;">
+                                                <button style="padding: 0.375rem 0.75rem; background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; border-radius: 0.375rem; font-size: 0.875rem; cursor: pointer; font-weight: 500;" 
+                                                        @onclick="() => OpenManageUsersDialog(projectRole)"
+                                                        title="Manage Users">
+                                                    👥 Users
+                                                </button>
+                                                <button style="padding: 0.375rem 0.75rem; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 0.375rem; font-size: 0.875rem; cursor: pointer;" 
+                                                        @onclick="() => DeleteProjectRole(projectRole)"
+                                                        title="Delete Role">
+                                                    🗑️
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                }
+            </div>
+        </div>
+    }
+}
+</div>
+
+<!-- Create Project Role Modal -->
+@if (showCreateDialog)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+        <div style="background: white; border-radius: 0.5rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); max-width: 500px; width: 100%; margin: 1rem;">
+            <div style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0;">
+                <h3 style="margin: 0; color: #1e293b; font-size: 1.25rem; font-weight: 600;">➕ Create Project Role</h3>
+            </div>
+            <div style="padding: 1.5rem;">
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500;">Project</label>
+                        <select style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" 
+                                @bind="newProjectRole.ProjectId">
+                            <option value="">-- Select Project --</option>
+                            @if (projects != null)
+                            {
+                                @foreach (var project in projects)
+                                {
+                                    <option value="@project.ProjectId">@project.ProjectName</option>
+                                }
+                            }
+                        </select>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500;">Base Application Role</label>
+                        <select style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" 
+                                @bind="newProjectRole.ApplicationRoleId">
+                            <option value="">-- Select Base Role --</option>
+                            @if (applicationRoles != null)
+                            {
+                                @foreach (var role in applicationRoles.Where(r => r.Name != "sysadmin"))
+                                {
+                                    <option value="@role.RoleId">@role.Name</option>
+                                }
+                            }
+                        </select>
+                        <div style="color: #64748b; font-size: 0.75rem; margin-top: 0.25rem;">Note: Admin role is excluded as it's a global system administrator role.</div>
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500;">Custom Description (Optional)</label>
+                        <textarea style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem; font-family: inherit;" 
+                                  @bind="newProjectRole.Description" rows="3"></textarea>
+                    </div>
+                </div>
+                <div style="padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; display: flex; gap: 0.75rem; justify-content: flex-end;">
+                    <button class="lgreeny-btn-secondary" @onclick="CloseCreateDialog">Cancel</button>
+                    <button class="lgreeny-btn-primary" @onclick="CreateProjectRole">Create</button>
+                </div>
+        </div>
+    </div>
+}
+
+<!-- Manage Users Modal -->
+@if (showUsersDialog && selectedProjectRole != null)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+        <div style="background: white; border-radius: 0.5rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); max-width: 700px; width: 100%; margin: 1rem; max-height: 80vh; display: flex; flex-direction: column;">
+            <div style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0;">
+                <h3 style="margin: 0; color: #1e293b; font-size: 1.25rem; font-weight: 600;">👥 Manage Users - @selectedProjectRole.DisplayName</h3>
+            </div>
+            <div style="padding: 1.5rem; overflow-y: auto; flex: 1;">
+                <p style="color: #64748b; margin-bottom: 1rem;">Assign users to the <strong>@selectedProjectRole.DisplayName</strong> role:</p>
+                
+                @if (allUsers == null || allUsers.Count == 0)
+                {
+                    <div style="padding: 1rem; background: #fef3c7; border: 1px solid #fde68a; border-radius: 0.5rem; color: #92400e;">
+                        <strong>⚠️ No users have access to this project.</strong>
+                        <p style="margin: 0.5rem 0 0 0;">
+                            Users must first be granted project access before they can be assigned project roles.
+                            Use the <strong>User Project Access</strong> management to grant users access to this project.
+                        </p>
+                    </div>
+                }
+                else
+                {
+                    <div style="padding: 1rem; background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 0.5rem; color: #1e40af; margin-bottom: 1rem;">
+                        ℹ️ Only users with project access are shown below.
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem;">
+                        @foreach (var user in allUsers)
+                        {
+                            <div style="padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; background: #f8fafc;">
+                                <label style="display: flex; align-items: start; gap: 0.5rem; cursor: pointer;">
+                                    <input type="checkbox" 
+                                           style="margin-top: 0.25rem;"
+                                           id="user-@user.UserId"
+                                           checked="@(assignedUsers.Any(u => u.UserId == user.UserId))"
+                                           @onchange="(e) => ToggleUserAssignment(user.UserId, (bool)e.Value!)" />
+                                    <div>
+                                        <strong style="color: #1e293b;">@user.DisplayName</strong><br>
+                                        <small style="color: #64748b;">@user.Username</small>
+                                    </div>
+                                </label>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            <div style="padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; display: flex; gap: 0.75rem; justify-content: flex-end;">
+                <button class="lgreeny-btn-secondary" @onclick="CloseUsersDialog">Close</button>
+                <button class="lgreeny-btn-primary" @onclick="SaveUserAssignments">💾 Save</button>
+            </div>
+        </div>
+    </div>
+}
+
+
+@code {
+    [Parameter]
+    public int? ProjectIdParam { get; set; }
+
+    // Data collections
+    private List<Project> projects = new();
+    private List<ProjectRole> projectRoles = new();
+    private List<ApplicationRole> applicationRoles = new();
+    private List<ApplicationUser> allUsers = new();
+    private Dictionary<int, List<ApplicationUser>> projectRoleUsers = new();
+
+    // UI state
+    private int? selectedProjectId;
+    private string? errorMessage;
+    private string? successMessage;
+    private bool isLoading = false;
+
+    // Dialog states
+    private bool showCreateDialog = false;
+    private bool showUsersDialog = false;
+
+    // Selected items
+    private ProjectRole? selectedProjectRole;
+    private List<ApplicationUser> assignedUsers = new();
+
+    // New project role data
+    private NewProjectRoleModel newProjectRole = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        
+        // If a project ID parameter was provided, pre-select it
+        if (ProjectIdParam.HasValue)
+        {
+            selectedProjectId = ProjectIdParam.Value;
+            await LoadProjectRoles();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            projects = (await ProjectService.GetAllProjectsAsync()).ToList();
+            applicationRoles = await RoleService.GetAllRolesAsync();
+            allUsers = await UserService.GetAllUsersAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadProjectRoles()
+    {
+        if (!selectedProjectId.HasValue) return;
+
+        try
+        {
+            projectRoles = await ProjectRoleService.GetProjectRolesAsync(selectedProjectId.Value);
+
+            // Load users for each project role
+            projectRoleUsers.Clear();
+
+            foreach (var projectRole in projectRoles)
+            {
+                projectRoleUsers[projectRole.ProjectRoleId] = await ProjectRoleService.GetUsersInProjectRoleAsync(projectRole.ProjectRoleId);
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private void OpenCreateProjectRoleDialog()
+    {
+        newProjectRole = new NewProjectRoleModel { ProjectId = selectedProjectId ?? 0 };
+        showCreateDialog = true;
+    }
+
+    private void CloseCreateDialog()
+    {
+        showCreateDialog = false;
+        newProjectRole = new();
+    }
+
+    private async Task CreateProjectRole()
+    {
+        try
+        {
+            if (newProjectRole.ProjectId == 0 || newProjectRole.ApplicationRoleId == 0)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Please select both a project and a base role.");
+                return;
+            }
+
+            await ProjectRoleService.CreateProjectRoleAsync(
+                newProjectRole.ProjectId,
+                newProjectRole.ApplicationRoleId,
+                newProjectRole.Description);
+
+            await LoadProjectRoles();
+            CloseCreateDialog();
+            await JSRuntime.InvokeVoidAsync("alert", "Project role created successfully!");
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error creating project role: {ex.Message}");
+        }
+    }
+
+    private async Task OpenManageUsersDialog(ProjectRole projectRole)
+    {
+        selectedProjectRole = projectRole;
+        
+        // Show all users since project access is now managed by AD groups
+        allUsers = await UserService.GetAllUsersAsync();
+        
+        assignedUsers = await ProjectRoleService.GetUsersInProjectRoleAsync(projectRole.ProjectRoleId);
+        showUsersDialog = true;
+    }
+
+    private void CloseUsersDialog()
+    {
+        showUsersDialog = false;
+        assignedUsers = new();
+    }
+
+    private async Task SaveUserAssignments()
+    {
+        if (selectedProjectRole == null) return;
+
+        try
+        {
+            var currentUsers = await ProjectRoleService.GetUsersInProjectRoleAsync(selectedProjectRole.ProjectRoleId);
+
+            // Remove users no longer assigned
+            foreach (var user in currentUsers)
+            {
+                if (!assignedUsers.Any(u => u.UserId == user.UserId))
+                {
+                    await ProjectRoleService.RemoveUserFromProjectRoleAsync(user.UserId, selectedProjectRole.ProjectRoleId);
+                }
+            }
+
+            // Add newly assigned users
+            foreach (var user in assignedUsers)
+            {
+                if (!currentUsers.Any(u => u.UserId == user.UserId))
+                {
+                    await ProjectRoleService.AssignUserToProjectRoleAsync(user.UserId, selectedProjectRole.ProjectRoleId);
+                }
+            }
+
+            await LoadProjectRoles();
+            CloseUsersDialog();
+            await JSRuntime.InvokeVoidAsync("alert", "User assignments saved successfully!");
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving user assignments: {ex.Message}");
+        }
+    }
+
+    private void ToggleUserAssignment(int userId, bool isAssigned)
+    {
+        var user = allUsers!.FirstOrDefault(u => u.UserId == userId);
+        if (user != null)
+        {
+            if (isAssigned)
+            {
+                if (!assignedUsers.Any(u => u.UserId == userId))
+                {
+                    assignedUsers.Add(user);
+                }
+            }
+            else
+            {
+                var assignedUser = assignedUsers.FirstOrDefault(u => u.UserId == userId);
+                if (assignedUser != null)
+                {
+                    assignedUsers.Remove(assignedUser);
+                }
+            }
+        }
+    }
+
+    private async Task DeleteProjectRole(ProjectRole projectRole)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm",
+            $"Are you sure you want to delete the project role '{projectRole.DisplayName}'? This will remove all user assignments and permissions for this role.");
+
+        if (confirmed)
+        {
+            try
+            {
+                await ProjectRoleService.DeleteProjectRoleAsync(projectRole.ProjectRoleId);
+                await LoadProjectRoles();
+                await JSRuntime.InvokeVoidAsync("alert", $"Project role '{projectRole.DisplayName}' deleted successfully!");
+            }
+            catch (Exception ex)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error deleting project role: {ex.Message}");
+            }
+        }
+    }
+
+    public class NewProjectRoleModel
+    {
+        public int ProjectId { get; set; }
+        public int ApplicationRoleId { get; set; }
+        public string? Description { get; set; }
+    }
+}
+
+

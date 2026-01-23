@@ -1,0 +1,1504 @@
+@page "/sysadmin/document-import"
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@using DV.Admin.UI.Services
+@using DV.Shared.Models
+@using DV.Admin.UI.Components.Documents
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Components.Forms
+@inject DocumentUploadService DocumentUploadService
+@inject ProjectService ProjectService
+@inject DocumentRepository DocumentRepository
+@inject AppDbContext DbContext
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+@inject IDbContextFactory<SecurityDbContext> SecurityDbContextFactory
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Document Management</PageTitle>
+
+<div class="lgreeny-dashboard">
+    <!-- Header -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+            <h2 style="margin: 0; color: #1e293b; font-size: 1.75rem; font-weight: 600;">📦 Document Management</h2>
+            <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.875rem;">Manage, upload, and organize documents across projects</p>
+        </div>
+        <button class="lgreeny-btn-secondary" style="width: auto;" @onclick="GoBackToDashboard">
+            ← Back to Dashboard
+        </button>
+    </div>
+
+    <!-- Upload Instructions Card (Full Width) -->
+    <div class="lgreeny-panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+            <h3 class="panel-title">📋 Document Upload Instructions</h3>
+        </div>
+        <div class="panel-body">
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem;">
+                <div>
+                    <h6 style="color: #1e293b; font-weight: 600; margin-bottom: 0.75rem;">✅ Supported File Types:</h6>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">📄 PDF Documents</li>
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">🖼️ TIFF Images</li>
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">🖼️ JPEG/PNG/BMP/GIF Images</li>
+                    </ul>
+                </div>
+                <div>
+                    <h6 style="color: #1e293b; font-weight: 600; margin-bottom: 0.75rem;">📊 File Limits:</h6>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">• Maximum size: 50MB per file</li>
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">• Stored as BLOB in database</li>
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">• Automatic checksum verification</li>
+                    </ul>
+                </div>
+                <div>
+                    <h6 style="color: #1e293b; font-weight: 600; margin-bottom: 0.75rem;">🔧 Available Actions:</h6>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">• View document details and pages</li>
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">• Edit metadata and properties</li>
+                        <li style="padding: 0.375rem 0; color: #64748b; font-size: 0.875rem;">• Upload additional pages</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Project/Schema Selection -->
+    <div class="lgreeny-panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+            <h3 class="panel-title">�️ Select Project / Schema</h3>
+        </div>
+        <div class="panel-body">
+            <div style="display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: end;">
+                <div>
+                    <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                        Select a project to view and manage its documents:
+                    </label>
+                    <select @bind="selectedProjectId" 
+                            @bind:after="OnProjectSelected"
+                            style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;">
+                        <option value="0">-- Select a Project --</option>
+                        @if (allProjects != null)
+                        {
+                            @foreach (var project in allProjects)
+                            {
+                                <option value="@project.ProjectId">@project.ProjectName (@project.SchemaName)</option>
+                            }
+                        }
+                    </select>
+                </div>
+                <button class="lgreeny-btn-primary" style="width: auto;" @onclick="OpenUploadDialog" disabled="@(selectedProjectId == 0)">
+                    ➕ Upload New Document
+                </button>
+            </div>
+            
+            @if (selectedProjectId > 0 && selectedProject != null)
+            {
+                <div style="margin-top: 1rem; padding: 0.75rem; background: #dbeafe; border-radius: 0.375rem;">
+                    <span style="color: #1e40af; font-size: 0.875rem; font-weight: 500;">
+                        📁 Selected Project: @selectedProject.ProjectName
+                    </span>
+                    <span style="color: #64748b; font-size: 0.875rem; margin-left: 1rem;">
+                        Schema: @selectedProject.SchemaName
+                    </span>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Documents Table -->
+    @if (selectedProjectId > 0)
+    {
+        @if (isLoadingDocuments)
+        {
+            <div style="text-align: center; padding: 3rem;">
+                <div style="color: #3b82f6; font-size: 2rem;">⏳</div>
+                <p style="color: #64748b; margin-top: 1rem;">Loading documents...</p>
+            </div>
+        }
+        else if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.5rem; margin-bottom: 1.5rem; color: #991b1b;">
+                ⚠️ @errorMessage
+            </div>
+        }
+        else
+        {
+            <div class="lgreeny-panel">
+                <div class="panel-header">
+                    <h3 class="panel-title">� Documents in @selectedProject?.ProjectName</h3>
+                </div>
+                <div class="panel-body">
+                    <!-- Search/Filter Box -->
+                    <div style="margin-bottom: 1rem;">
+                        <div style="position: relative;">
+                            <span style="position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 1rem;">🔍</span>
+                            <input type="text" 
+                                   @bind="searchText"
+                                   @bind:event="oninput"
+                                   @bind:after="OnSearchChanged"
+                                   placeholder="Search by document number, title, author, or keywords..."
+                                   style="width: 100%; padding: 0.5rem 0.5rem 0.5rem 2.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" />
+                            @if (!string.IsNullOrWhiteSpace(searchText))
+                            {
+                                <button @onclick="ClearSearch"
+                                        style="position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%); padding: 0.25rem 0.5rem; background: #f1f5f9; color: #64748b; border: none; border-radius: 0.25rem; font-size: 0.75rem; cursor: pointer;">
+                                    ✖ Clear
+                                </button>
+                            }
+                        </div>
+                        @if (filteredDocuments != null)
+                        {
+                            <div style="margin-top: 0.5rem; color: #64748b; font-size: 0.875rem;">
+                                Showing @filteredDocuments.Count of @allDocuments.Count documents
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Documents Table -->
+                    @if (filteredDocuments == null || filteredDocuments.Count == 0)
+                    {
+                        <div style="padding: 2rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; text-align: center; color: #64748b;">
+                            @if (string.IsNullOrWhiteSpace(searchText))
+                            {
+                                <div style="font-size: 2rem; margin-bottom: 0.5rem;">📭</div>
+                                <p>No documents found in this project.</p>
+                                <button class="lgreeny-btn-primary" style="margin-top: 1rem;" @onclick="OpenUploadDialog">
+                                    ➕ Upload First Document
+                                </button>
+                            }
+                            else
+                            {
+                                <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔍</div>
+                                <p>No documents match your search criteria.</p>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <table class="lgreeny-table">
+                            <thead>
+                                <tr>
+                                    <th>Document #</th>
+                                    <th>Title</th>
+                                    <th>Type</th>
+                                    <th>Author</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                    <th style="text-align: right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var doc in filteredDocuments)
+                                {
+                                    <tr>
+                                        <td>
+                                            <strong style="color: #1e293b; font-family: monospace;">@doc.DocumentNumber</strong>
+                                        </td>
+                                        <td>
+                                            <strong style="color: #1e293b;">@doc.Title</strong>
+                                            @if (!string.IsNullOrEmpty(doc.Keywords))
+                                            {
+                                                <br>
+                                                <small style="color: #94a3b8;">🏷️ @doc.Keywords</small>
+                                            }
+                                        </td>
+                                        <td>
+                                            <span style="padding: 0.25rem 0.5rem; background: #dbeafe; color: #1e40af; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 500;">
+                                                @doc.DocumentType
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <small style="color: #64748b;">@doc.Author</small>
+                                        </td>
+                                        <td>
+                                            <span style="padding: 0.25rem 0.5rem; background: @GetStatusColor(doc.DocumentStatus); border-radius: 0.25rem; font-size: 0.75rem; font-weight: 500;">
+                                                @doc.DocumentStatus
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <small style="color: #64748b;">@doc.CreatedOn.ToString("MMM dd, yyyy")</small>
+                                        </td>
+                                        <td>
+                                            <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                                                <button style="padding: 0.375rem 0.75rem; background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; border-radius: 0.375rem; font-size: 0.75rem; cursor: pointer;" 
+                                                        @onclick="() => ViewDocument(doc)"
+                                                        title="View Document">
+                                                    👁️ View
+                                                </button>
+                                                <button style="padding: 0.375rem 0.75rem; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 0.375rem; font-size: 0.75rem; cursor: pointer;" 
+                                                        @onclick="() => EditDocument(doc)"
+                                                        title="Edit Metadata">
+                                                    ✏️ Edit
+                                                </button>
+                                                <button style="padding: 0.375rem 0.75rem; background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; border-radius: 0.375rem; font-size: 0.75rem; cursor: pointer;" 
+                                                        @onclick="() => UploadPages(doc)"
+                                                        title="Upload Pages">
+                                                    📄 Pages
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+        }
+    }
+    else
+    {
+        <div class="lgreeny-panel">
+            <div class="panel-body" style="text-align: center; padding: 3rem;">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">📂</div>
+                <h4 style="color: #1e293b; margin-bottom: 0.5rem;">Select a Project to Begin</h4>
+                <p style="color: #64748b; max-width: 600px; margin: 0 auto;">
+                    Choose a project from the dropdown above to view and manage its documents. You can upload new documents, edit existing ones, and manage document pages.
+                </p>
+            </div>
+        </div>
+    }
+
+    <!-- Upload Dialog Modal -->
+    @if (showUploadDialog)
+    {
+        <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;" @onclick="CloseUploadDialog">
+            <div style="background: white; border-radius: 0.5rem; padding: 2rem; max-width: 800px; width: 90%; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h3 style="margin: 0; color: #1e293b;">📤 Upload Document to @selectedProject?.ProjectName</h3>
+                    <button @onclick="CloseUploadDialog" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b;">✖</button>
+                </div>
+                <DocumentUpload OnUploadCompleted="OnDocumentUploaded" />
+            </div>
+        </div>
+    }
+
+    <!-- Upload Pages Dialog Modal -->
+    @if (showUploadPagesDialog && selectedDocumentForPages != null)
+    {
+        <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;" @onclick="CloseUploadPagesDialog">
+            <div style="background: white; border-radius: 0.5rem; padding: 2rem; max-width: 800px; width: 90%; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <div>
+                        <h3 style="margin: 0; color: #1e293b;">📄 Upload Pages</h3>
+                        <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.875rem;">
+                            Document: <strong>@selectedDocumentForPages.DocumentNumber</strong> - @selectedDocumentForPages.Title
+                        </p>
+                    </div>
+                    <button @onclick="CloseUploadPagesDialog" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b;">✖</button>
+                </div>
+
+                @if (isLoadingPages)
+                {
+                    <div style="text-align: center; padding: 2rem; color: #64748b;">
+                        <div style="font-size: 2rem; margin-bottom: 0.5rem;">⏳</div>
+                        <p>Loading existing pages...</p>
+                    </div>
+                }
+                else
+                {
+                    @if (existingPages != null && existingPages.Any())
+                    {
+                        <div style="padding: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.375rem; margin-bottom: 1rem;">
+                            <h6 style="margin: 0 0 0.5rem 0; color: #1e293b; font-size: 0.875rem; font-weight: 600;">
+                                📋 Existing Pages (@existingPages.Count)
+                            </h6>
+                            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                                @foreach (var page in existingPages.OrderBy(p => p.PageNumber))
+                                {
+                                    var pageInfo = string.IsNullOrEmpty(page.PageReference) ? $"Page {page.PageNumber}" : $"Page {page.PageNumber}: {page.PageReference}";
+                                    <button type="button"
+                                            @onclick="() => OpenEditPageDialog(page)"
+                                            style="padding: 0.25rem 0.5rem; background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 500; cursor: pointer; transition: all 0.2s;"
+                                            title="Click to edit this page">
+                                        @pageInfo ✏️
+                                    </button>
+                                }
+                            </div>
+                            <div style="margin-top: 0.5rem; color: #64748b; font-size: 0.75rem;">
+                                💡 Next available page number: <strong>@suggestedPageNumber</strong> | Click any page badge to edit
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="padding: 1rem; background: #fef3c7; border: 1px solid #fde68a; border-radius: 0.375rem; margin-bottom: 1rem;">
+                            <div style="color: #92400e; font-size: 0.875rem;">
+                                📭 No pages uploaded yet. This will be the first page.
+                            </div>
+                        </div>
+                    }
+                }
+
+                @if (!string.IsNullOrEmpty(pageUploadErrorMessage))
+                {
+                    <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.5rem; margin-bottom: 1rem; color: #991b1b;">
+                        ⚠️ @pageUploadErrorMessage
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(pageUploadSuccessMessage))
+                    {
+                        <div style="padding: 1rem; background: #d1fae5; border: 1px solid #a7f3d0; border-radius: 0.5rem; margin-bottom: 1rem; color: #065f46;">
+                            ✅ @pageUploadSuccessMessage
+                        </div>
+                    }
+
+                    <div style="display: grid; gap: 1rem;">
+                        <!-- Page Number -->
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                <label style="color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                                    Page Number *
+                                </label>
+                                @if (existingPages != null && existingPages.Any() && newPageNumber != suggestedPageNumber)
+                                {
+                                    <button type="button" 
+                                            @onclick="() => newPageNumber = suggestedPageNumber"
+                                            style="padding: 0.25rem 0.5rem; background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; border-radius: 0.25rem; font-size: 0.75rem; cursor: pointer;">
+                                        Use Suggested (@suggestedPageNumber)
+                                    </button>
+                                }
+                            </div>
+                            <input type="number" 
+                                   @bind="newPageNumber"
+                                   min="1"
+                                   style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" />
+                            <small style="color: #64748b; font-size: 0.75rem;">
+                                @if (existingPages != null && existingPages.Any(p => p.PageNumber == newPageNumber))
+                                {
+                                    <span style="color: #dc2626; font-weight: 500;">⚠️ Page @newPageNumber already exists! Use a different number.</span>
+                                }
+                                else if (existingPages != null && existingPages.Any())
+                                {
+                                    <span>💡 Suggested next page: <strong>@suggestedPageNumber</strong></span>
+                                }
+                                else
+                                {
+                                    <span>Specify the page number for this document page</span>
+                                }
+                            </small>
+                        </div>
+
+                    <!-- Page Reference -->
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                            Page Reference (Optional)
+                        </label>
+                        <input type="text" 
+                               @bind="newPageReference"
+                               placeholder="e.g., 'Cover Page', 'Appendix A'"
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" />
+                        <small style="color: #64748b; font-size: 0.75rem;">Optional description or reference for this page</small>
+                    </div>
+
+                    <!-- File Upload -->
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                            Select File *
+                        </label>
+                        <InputFile OnChange="HandlePageFileSelected" 
+                                   accept=".pdf,.tiff,.tif,.jpg,.jpeg,.png,.bmp,.gif"
+                                   style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" />
+                        <small style="color: #64748b; font-size: 0.75rem;">
+                            Supported: PDF, TIFF, JPEG, PNG, BMP, GIF (Max: 50MB)
+                        </small>
+                    </div>
+
+                    @if (selectedPageFile != null)
+                    {
+                        <div style="padding: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.375rem;">
+                            <h6 style="margin: 0 0 0.5rem 0; color: #1e293b; font-size: 0.875rem; font-weight: 600;">Selected File:</h6>
+                            <div style="display: grid; grid-template-columns: auto 1fr; gap: 0.5rem; font-size: 0.875rem;">
+                                <span style="color: #64748b;">Name:</span>
+                                <span style="color: #1e293b; font-weight: 500;">@selectedPageFile.Name</span>
+                                <span style="color: #64748b;">Size:</span>
+                                <span style="color: #1e293b; font-weight: 500;">@FormatFileSize(selectedPageFile.Size)</span>
+                                <span style="color: #64748b;">Type:</span>
+                                <span style="color: #1e293b; font-weight: 500;">@selectedPageFile.ContentType</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Action Buttons -->
+                <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem;">
+                    <button class="lgreeny-btn-secondary" @onclick="CloseUploadPagesDialog" disabled="@isUploadingPage">
+                        Cancel
+                    </button>
+                    <button class="lgreeny-btn-primary" @onclick="UploadPageToDocument" disabled="@(!CanUploadPage() || isUploadingPage)">
+                        @if (isUploadingPage)
+                        {
+                            <span>⏳ Uploading...</span>
+                        }
+                        else
+                        {
+                            <span>📤 Upload Page</span>
+                        }
+                    </button>
+                </div>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- Edit Page Dialog Modal -->
+    @if (showEditPageDialog && editingPage != null)
+    {
+        <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1001; display: flex; align-items: center; justify-content: center;" @onclick="CloseEditPageDialog">
+            <div style="background: white; border-radius: 0.5rem; padding: 2rem; max-width: 700px; width: 90%; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <div>
+                        <h3 style="margin: 0; color: #1e293b;">✏️ Edit Page Details</h3>
+                        <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.875rem;">
+                            Document: <strong>@selectedDocumentForPages?.DocumentNumber</strong>
+                        </p>
+                    </div>
+                    <button @onclick="CloseEditPageDialog" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b;">✖</button>
+                </div>
+
+                @if (!string.IsNullOrEmpty(pageEditErrorMessage))
+                {
+                    <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.5rem; margin-bottom: 1rem; color: #991b1b;">
+                        ⚠️ @pageEditErrorMessage
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(pageEditSuccessMessage))
+                {
+                    <div style="padding: 1rem; background: #d1fae5; border: 1px solid #a7f3d0; border-radius: 0.5rem; margin-bottom: 1rem; color: #065f46;">
+                        ✅ @pageEditSuccessMessage
+                    </div>
+                }
+
+                <div style="display: grid; gap: 1rem;">
+                    <!-- Current Page Info -->
+                    <div style="padding: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.375rem;">
+                        <div style="display: grid; grid-template-columns: auto 1fr; gap: 0.5rem; font-size: 0.875rem;">
+                            <span style="color: #64748b;">Page ID:</span>
+                            <span style="color: #1e293b; font-weight: 500;">@editingPage.PageId</span>
+                            <span style="color: #64748b;">Current Page Number:</span>
+                            <span style="color: #1e293b; font-weight: 500;">@editingPage.PageNumber</span>
+                            <span style="color: #64748b;">File Size:</span>
+                            <span style="color: #1e293b; font-weight: 500;">@FormatFileSize(editingPage.FileSize ?? 0)</span>
+                            <span style="color: #64748b;">Content Type:</span>
+                            <span style="color: #1e293b; font-weight: 500;">@editingPage.ContentType</span>
+                        </div>
+                    </div>
+
+                    <!-- Page Number -->
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                            Page Number *
+                        </label>
+                        <input type="number" 
+                               @bind="editPageNumber"
+                               min="1"
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" />
+                        <small style="color: #64748b; font-size: 0.75rem;">
+                            @if (existingPages != null && existingPages.Any(p => p.PageNumber == editPageNumber && p.PageId != editingPage.PageId))
+                            {
+                                <span style="color: #dc2626; font-weight: 500;">⚠️ Page @editPageNumber already exists! Choose a different number.</span>
+                            }
+                            else
+                            {
+                                <span>Change the page number if needed</span>
+                            }
+                        </small>
+                    </div>
+
+                    <!-- Page Reference -->
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                            Page Reference (Optional)
+                        </label>
+                        <input type="text" 
+                               @bind="editPageReference"
+                               placeholder="e.g., 'Cover Page', 'Appendix A'"
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" />
+                        <small style="color: #64748b; font-size: 0.75rem;">Optional description or reference for this page</small>
+                    </div>
+
+                    <!-- Replace File (Optional) -->
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                            Replace File (Optional)
+                        </label>
+                        <InputFile OnChange="HandleEditPageFileSelected" 
+                                   accept=".pdf,.tiff,.tif,.jpg,.jpeg,.png,.bmp,.gif"
+                                   style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" />
+                        <small style="color: #64748b; font-size: 0.75rem;">
+                            Leave empty to keep the current file. Upload a new file to replace it.
+                        </small>
+                    </div>
+
+                    @if (editPageFile != null)
+                    {
+                        <div style="padding: 1rem; background: #fef3c7; border: 1px solid #fde68a; border-radius: 0.375rem;">
+                            <h6 style="margin: 0 0 0.5rem 0; color: #92400e; font-size: 0.875rem; font-weight: 600;">🔄 New File Selected:</h6>
+                            <div style="display: grid; grid-template-columns: auto 1fr; gap: 0.5rem; font-size: 0.875rem;">
+                                <span style="color: #92400e;">Name:</span>
+                                <span style="color: #78350f; font-weight: 500;">@editPageFile.Name</span>
+                                <span style="color: #92400e;">Size:</span>
+                                <span style="color: #78350f; font-weight: 500;">@FormatFileSize(editPageFile.Size)</span>
+                                <span style="color: #92400e;">Type:</span>
+                                <span style="color: #78350f; font-weight: 500;">@editPageFile.ContentType</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Action Buttons -->
+                <div style="display: flex; gap: 0.75rem; justify-content: space-between; margin-top: 1.5rem;">
+                    <button class="lgreeny-btn-secondary" 
+                            style="background: #fee2e2; color: #991b1b; border-color: #fecaca;"
+                            @onclick="DeletePage" 
+                            disabled="@isEditingPage">
+                        🗑️ Delete Page
+                    </button>
+                    <div style="display: flex; gap: 0.75rem;">
+                        <button class="lgreeny-btn-secondary" @onclick="CloseEditPageDialog" disabled="@isEditingPage">
+                            Cancel
+                        </button>
+                        <button class="lgreeny-btn-primary" @onclick="SavePageChanges" disabled="@(!CanSavePageEdit() || isEditingPage)">
+                            @if (isEditingPage)
+                            {
+                                <span>⏳ Saving...</span>
+                            }
+                            else
+                            {
+                                <span>💾 Save Changes</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Edit Document Dialog Modal -->
+    @if (showEditDialog && editingDocument != null)
+    {
+        <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;" @onclick="CloseEditDialog">
+            <div style="background: white; border-radius: 0.5rem; padding: 2rem; max-width: 900px; width: 90%; max-height: 90vh; overflow-y: auto;" @onclick:stopPropagation>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h3 style="margin: 0; color: #1e293b;">✏️ Edit Document Metadata</h3>
+                    <button @onclick="CloseEditDialog" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b;">✖</button>
+                </div>
+
+                @if (!string.IsNullOrEmpty(editErrorMessage))
+                {
+                    <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.5rem; margin-bottom: 1rem; color: #991b1b;">
+                        ⚠️ @editErrorMessage
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(editSuccessMessage))
+                {
+                    <div style="padding: 1rem; background: #d1fae5; border: 1px solid #a7f3d0; border-radius: 0.5rem; margin-bottom: 1rem; color: #065f46;">
+                        ✅ @editSuccessMessage
+                    </div>
+                }
+
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+                    <!-- Document Number -->
+                    <div style="grid-column: 1 / -1;">
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                            Document Number *
+                        </label>
+                        <input type="text" 
+                               @bind="editingDocument.DocumentNumber"
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem; font-family: monospace;" />
+                    </div>
+
+                    <!-- Title -->
+                    <div style="grid-column: 1 / -1;">
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                            Title
+                        </label>
+                        <input type="text" 
+                               @bind="editingDocument.Title"
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" />
+                    </div>
+
+                    <!-- Author -->
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                            Author
+                        </label>
+                        <input type="text" 
+                               @bind="editingDocument.Author"
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" />
+                    </div>
+
+                    <!-- Document Type -->
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                            Document Type
+                        </label>
+                        <select @bind="editingDocument.DocumentType"
+                                style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;">
+                            <option value="PDF">PDF</option>
+                            <option value="TIFF">TIFF</option>
+                            <option value="IMAGE">IMAGE</option>
+                            <option value="OTHER">OTHER</option>
+                        </select>
+                    </div>
+
+                    <!-- Status -->
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                            Status
+                        </label>
+                        <select @bind="editingDocument.DocumentStatus"
+                                style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;">
+                            <option value="Draft">Draft</option>
+                            <option value="Pending">Pending</option>
+                            <option value="Active">Active</option>
+                            <option value="Approved">Approved</option>
+                            <option value="Final">Final</option>
+                            <option value="Archived">Archived</option>
+                            <option value="Superseded">Superseded</option>
+                            <option value="Cancelled">Cancelled</option>
+                            <option value="Rejected">Rejected</option>
+                        </select>
+                    </div>
+
+                    <!-- Classification -->
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                            Classification
+                        </label>
+                        <input type="text" 
+                               @bind="editingDocument.Classification"
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" />
+                    </div>
+
+                    <!-- Keywords -->
+                    <div style="grid-column: 1 / -1;">
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                            Keywords
+                        </label>
+                        <input type="text" 
+                               @bind="editingDocument.Keywords"
+                               placeholder="Comma-separated keywords"
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" />
+                    </div>
+
+                    <!-- Document Index -->
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                            Document Index
+                        </label>
+                        <input type="text" 
+                               @bind="editingDocument.DocumentIndex"
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" />
+                    </div>
+
+                    <!-- Issue -->
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                            Issue
+                        </label>
+                        <input type="text" 
+                               @bind="editingDocument.Issue"
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" />
+                    </div>
+
+                    <!-- Memo -->
+                    <div style="grid-column: 1 / -1;">
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">
+                            Memo
+                        </label>
+                        <textarea @bind="editingDocument.Memo"
+                                  rows="3"
+                                  style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem; resize: vertical;"></textarea>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div style="display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem;">
+                    <button class="lgreeny-btn-secondary" @onclick="CloseEditDialog" disabled="@isSaving">
+                        Cancel
+                    </button>
+                    <button class="lgreeny-btn-primary" @onclick="SaveDocumentChanges" disabled="@isSaving">
+                        @if (isSaving)
+                        {
+                            <span>⏳ Saving...</span>
+                        }
+                        else
+                        {
+                            <span>💾 Save Changes</span>
+                        }
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    @@keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+    }
+</style>
+
+@code {
+    // Project selection
+    private int selectedProjectId = 0;
+    private Project? selectedProject;
+    private IEnumerable<Project>? allProjects;
+
+    // Document management
+    private List<Document> allDocuments = new();
+    private List<Document> filteredDocuments = new();
+    private bool isLoadingDocuments = false;
+    private string searchText = string.Empty;
+    private string? errorMessage;
+
+    // Upload dialog
+    private bool showUploadDialog = false;
+
+    // Edit dialog
+    private bool showEditDialog = false;
+    private EditableDocument? editingDocument = null;
+    private bool isSaving = false;
+    private string? editErrorMessage;
+    private string? editSuccessMessage;
+
+    // Editable document class for two-way binding
+    private class EditableDocument
+    {
+        public int DocumentId { get; set; }
+        public string DocumentNumber { get; set; } = string.Empty;
+        public string? Title { get; set; }
+        public string? Author { get; set; }
+        public string DocumentType { get; set; } = "PDF";
+        public string? DocumentStatus { get; set; }
+        public string? Classification { get; set; }
+        public string? Keywords { get; set; }
+        public string? DocumentIndex { get; set; }
+        public string? Issue { get; set; }
+        public string? Memo { get; set; }
+    }
+
+    // Page upload dialog
+    private bool showUploadPagesDialog = false;
+    private Document? selectedDocumentForPages = null;
+    private int newPageNumber = 1;
+    private int suggestedPageNumber = 1;
+    private string newPageReference = string.Empty;
+    private IBrowserFile? selectedPageFile = null;
+    private bool isUploadingPage = false;
+    private bool isLoadingPages = false;
+    private List<DocumentPage>? existingPages = null;
+    private string? pageUploadErrorMessage;
+    private string? pageUploadSuccessMessage;
+
+    // Page edit dialog
+    private bool showEditPageDialog = false;
+    private DocumentPage? editingPage = null;
+    private int editPageNumber = 1;
+    private string editPageReference = string.Empty;
+    private IBrowserFile? editPageFile = null;
+    private bool isEditingPage = false;
+    private string? pageEditErrorMessage;
+    private string? pageEditSuccessMessage;
+
+    // Migration related (kept for backward compatibility - not used in this redesigned interface)
+    private int? migrationDocumentId;
+    #pragma warning disable CS0414 // Field is assigned but its value is never used - reserved for future migration features
+    private bool isMigrating = false;
+    #pragma warning restore CS0414
+    private string? migrationError;
+    private DocumentMigrationResult? migrationResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProjects();
+    }
+
+    private async Task LoadProjects()
+    {
+        try
+        {
+            allProjects = await ProjectService.GetActiveProjectsAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading projects: {ex.Message}";
+        }
+    }
+
+    private async Task OnProjectSelected()
+    {
+        if (selectedProjectId > 0)
+        {
+            selectedProject = allProjects?.FirstOrDefault(p => p.ProjectId == selectedProjectId);
+            await LoadDocumentsForProject();
+        }
+        else
+        {
+            selectedProject = null;
+            allDocuments.Clear();
+            filteredDocuments.Clear();
+        }
+    }
+
+    private async Task LoadDocumentsForProject()
+    {
+        if (selectedProject == null || string.IsNullOrEmpty(selectedProject.SchemaName))
+        {
+            return;
+        }
+
+        isLoadingDocuments = true;
+        errorMessage = null;
+
+        try
+        {
+            // Load documents from the selected project's schema
+            var documents = await DocumentRepository.SearchAsync("DefaultConnection", null, 1, 1000, selectedProjectId);
+            allDocuments = documents.ToList();
+            filteredDocuments = allDocuments;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading documents: {ex.Message}";
+            allDocuments.Clear();
+            filteredDocuments.Clear();
+        }
+        finally
+        {
+            isLoadingDocuments = false;
+        }
+    }
+
+    private void OnSearchChanged()
+    {
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            filteredDocuments = allDocuments;
+        }
+        else
+        {
+            var searchLower = searchText.ToLower();
+            filteredDocuments = allDocuments.Where(d =>
+                (d.DocumentNumber?.ToLower().Contains(searchLower) ?? false) ||
+                (d.Title?.ToLower().Contains(searchLower) ?? false) ||
+                (d.Author?.ToLower().Contains(searchLower) ?? false) ||
+                (d.Keywords?.ToLower().Contains(searchLower) ?? false)
+            ).ToList();
+        }
+    }
+
+    private void ClearSearch()
+    {
+        searchText = string.Empty;
+        OnSearchChanged();
+    }
+
+    private string GetStatusColor(string? status)
+    {
+        return status?.ToLower() switch
+        {
+            "active" or "approved" or "final" => "#d1fae5", // green
+            "draft" or "pending" => "#fef3c7", // yellow
+            "archived" or "superseded" => "#f3f4f6", // gray
+            "cancelled" or "rejected" => "#fee2e2", // red
+            _ => "#dbeafe" // blue default
+        };
+    }
+
+    private void ViewDocument(Document doc)
+    {
+        if (selectedProject != null)
+        {
+            Navigation.NavigateTo($"/viewdoc/DefaultConnection/{doc.DocumentId}");
+        }
+    }
+
+    private void EditDocument(Document doc)
+    {
+        // Create an editable copy of the document
+        editingDocument = new EditableDocument
+        {
+            DocumentId = doc.DocumentId,
+            DocumentNumber = doc.DocumentNumber,
+            Title = doc.Title,
+            Author = doc.Author,
+            DocumentType = doc.DocumentType ?? "PDF",
+            DocumentStatus = doc.DocumentStatus,
+            Classification = doc.Classification,
+            Keywords = doc.Keywords,
+            DocumentIndex = doc.DocumentIndex,
+            Issue = doc.Issue,
+            Memo = doc.Memo
+        };
+        editErrorMessage = null;
+        editSuccessMessage = null;
+        showEditDialog = true;
+    }
+
+    private void CloseEditDialog()
+    {
+        showEditDialog = false;
+        editingDocument = null;
+        editErrorMessage = null;
+        editSuccessMessage = null;
+    }
+
+    private async Task SaveDocumentChanges()
+    {
+        if (editingDocument == null || selectedProject == null)
+        {
+            return;
+        }
+
+        // Validate required fields
+        if (string.IsNullOrWhiteSpace(editingDocument.DocumentNumber))
+        {
+            editErrorMessage = "Document Number is required.";
+            return;
+        }
+
+        isSaving = true;
+        editErrorMessage = null;
+        editSuccessMessage = null;
+
+        try
+        {
+            // Update the document in the database using raw SQL
+            var sql = $@"
+                UPDATE [{selectedProject.SchemaName}].[Document]
+                SET 
+                    DocumentNumber = {{0}},
+                    Title = {{1}},
+                    Author = {{2}},
+                    DocumentType = {{3}},
+                    DocumentStatus = {{4}},
+                    Classification = {{5}},
+                    Keywords = {{6}},
+                    DocumentIndex = {{7}},
+                    Issue = {{8}},
+                    Memo = {{9}},
+                    ModifiedOn = {{10}}
+                WHERE DocumentId = {{11}}";
+
+            var rowsAffected = await DbContext.Database.ExecuteSqlRawAsync(
+                sql,
+                editingDocument.DocumentNumber!,
+                editingDocument.Title!,
+                editingDocument.Author!,
+                editingDocument.DocumentType!,
+                editingDocument.DocumentStatus!,
+                editingDocument.Classification!,
+                editingDocument.Keywords!,
+                editingDocument.DocumentIndex!,
+                editingDocument.Issue!,
+                editingDocument.Memo!,
+                DateTime.UtcNow,
+                editingDocument.DocumentId
+            );
+
+            if (rowsAffected > 0)
+            {
+                editSuccessMessage = "Document updated successfully!";
+                
+                // Reload the documents list to show updated data
+                await LoadDocumentsForProject();
+                
+                // Close dialog after a short delay
+                await Task.Delay(1500);
+                CloseEditDialog();
+            }
+            else
+            {
+                editErrorMessage = "No changes were made to the document.";
+            }
+        }
+        catch (Exception ex)
+        {
+            editErrorMessage = $"Error saving document: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private async Task UploadPages(Document doc)
+    {
+        selectedDocumentForPages = doc;
+        newPageNumber = 1;
+        suggestedPageNumber = 1;
+        newPageReference = string.Empty;
+        selectedPageFile = null;
+        pageUploadErrorMessage = null;
+        pageUploadSuccessMessage = null;
+        existingPages = null;
+        showUploadPagesDialog = true;
+        
+        // Load existing pages for this document
+        await LoadExistingPages();
+    }
+
+    private async Task LoadExistingPages()
+    {
+        if (selectedDocumentForPages == null)
+        {
+            return;
+        }
+
+        isLoadingPages = true;
+        
+        try
+        {
+            var pages = await DocumentRepository.GetPagesAsync("DefaultConnection", selectedDocumentForPages.DocumentId);
+            existingPages = pages.ToList();
+            
+            // Calculate next available page number
+            if (existingPages.Any())
+            {
+                suggestedPageNumber = existingPages.Max(p => p.PageNumber) + 1;
+                newPageNumber = suggestedPageNumber;
+            }
+            else
+            {
+                suggestedPageNumber = 1;
+                newPageNumber = 1;
+            }
+        }
+        catch (Exception ex)
+        {
+            pageUploadErrorMessage = $"Error loading existing pages: {ex.Message}";
+            existingPages = new List<DocumentPage>();
+        }
+        finally
+        {
+            isLoadingPages = false;
+        }
+    }
+
+    private void CloseUploadPagesDialog()
+    {
+        showUploadPagesDialog = false;
+        selectedDocumentForPages = null;
+        selectedPageFile = null;
+        pageUploadErrorMessage = null;
+        pageUploadSuccessMessage = null;
+    }
+
+    private void HandlePageFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedPageFile = e.File;
+        pageUploadErrorMessage = null;
+        pageUploadSuccessMessage = null;
+    }
+
+    private bool CanUploadPage()
+    {
+        // Check basic requirements
+        if (selectedPageFile == null || newPageNumber <= 0 || selectedDocumentForPages == null)
+        {
+            return false;
+        }
+        
+        // Check for duplicate page number
+        if (existingPages != null && existingPages.Any(p => p.PageNumber == newPageNumber))
+        {
+            return false;
+        }
+        
+        return true;
+    }
+
+    private async Task UploadPageToDocument()
+    {
+        if (selectedPageFile == null || selectedDocumentForPages == null || selectedProject == null)
+        {
+            return;
+        }
+
+        // Double-check for duplicate page number
+        if (existingPages != null && existingPages.Any(p => p.PageNumber == newPageNumber))
+        {
+            pageUploadErrorMessage = $"Page {newPageNumber} already exists. Please choose a different page number.";
+            return;
+        }
+
+        isUploadingPage = true;
+        pageUploadErrorMessage = null;
+        pageUploadSuccessMessage = null;
+
+        try
+        {
+            // Validate file size (50MB limit)
+            const long maxFileSize = 50 * 1024 * 1024; // 50MB
+            if (selectedPageFile.Size > maxFileSize)
+            {
+                pageUploadErrorMessage = "File size exceeds 50MB limit.";
+                return;
+            }
+
+            // Create a FormFile wrapper for the upload service
+            var formFile = new FormFileWrapper(selectedPageFile);
+
+            // Upload the page using DocumentUploadService
+            var currentUserId = await ResolveCurrentUserIdAsync();
+            var uploadedPage = await DocumentUploadService.UploadFileAsync(
+                selectedDocumentForPages.DocumentId,
+                newPageNumber,
+                formFile,
+                string.IsNullOrWhiteSpace(newPageReference) ? null : newPageReference,
+                userId: currentUserId,
+                documentIndex: selectedDocumentForPages.DocumentIndex ?? ""
+            );
+
+            pageUploadSuccessMessage = $"Page {newPageNumber} uploaded successfully!";
+            
+            // Reload existing pages to update the list
+            await LoadExistingPages();
+            
+            // Reset form fields
+            selectedPageFile = null;
+            newPageReference = string.Empty;
+            // newPageNumber is already set to next available by LoadExistingPages
+
+            // Auto-close after delay (optional - you can keep dialog open for multiple uploads)
+            await Task.Delay(1500);
+            // CloseUploadPagesDialog(); // Comment out to allow multiple uploads
+        }
+        catch (Exception ex)
+        {
+            // Check if it's a duplicate key error
+            if (ex.Message.Contains("duplicate key") || ex.Message.Contains("unique index"))
+            {
+                pageUploadErrorMessage = $"Page {newPageNumber} already exists in the database. Please choose a different page number.";
+            }
+            else
+            {
+                pageUploadErrorMessage = $"Error uploading page: {ex.Message}";
+            }
+        }
+        finally
+        {
+            isUploadingPage = false;
+        }
+    }
+
+    private async Task<int> ResolveCurrentUserIdAsync()
+    {
+        try
+        {
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var username = authState.User?.Identity?.Name;
+            if (!string.IsNullOrEmpty(username))
+            {
+                using var secCtx = await SecurityDbContextFactory.CreateDbContextAsync();
+                var user = await secCtx.Users.FirstOrDefaultAsync(u => u.Username == username);
+                if (user != null)
+                    return user.UserId;
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+
+        return 0;
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB" };
+        double len = bytes;
+        int order = 0;
+        while (len >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            len = len / 1024;
+        }
+        return $"{len:0.##} {sizes[order]}";
+    }
+
+    private void OpenUploadDialog()
+    {
+        showUploadDialog = true;
+    }
+
+    private void CloseUploadDialog()
+    {
+        showUploadDialog = false;
+    }
+
+    private async Task OnDocumentUploaded(DocumentPage uploadedPage)
+    {
+        // Reload documents after upload
+        await LoadDocumentsForProject();
+        CloseUploadDialog();
+        StateHasChanged();
+    }
+
+    private async Task StartMigration()
+    {
+        isMigrating = true;
+        migrationError = null;
+        migrationResult = null;
+
+        try
+        {
+            // Use the default connection string
+            var connectionString = "DefaultConnection"; // This could be made configurable
+            
+            migrationResult = await DocumentUploadService.MigrateFilePathToBlobAsync(connectionString, migrationDocumentId);
+            
+            if (!migrationResult.Success)
+            {
+                migrationError = migrationResult.ErrorMessage ?? "Migration failed with unknown error";
+            }
+        }
+        catch (Exception ex)
+        {
+            migrationError = $"Migration error: {ex.Message}";
+        }
+        finally
+        {
+            isMigrating = false;
+        }
+    }
+
+    private void ClearMigrationResults()
+    {
+        migrationResult = null;
+        migrationError = null;
+        migrationDocumentId = null;
+    }
+
+    private void GoBackToDashboard()
+    {
+        Navigation.NavigateTo("/sysadmin");
+    }
+
+    // Page editing methods
+    private void OpenEditPageDialog(DocumentPage page)
+    {
+        editingPage = page;
+        editPageNumber = page.PageNumber;
+        editPageReference = page.PageReference ?? string.Empty;
+        editPageFile = null;
+        pageEditErrorMessage = null;
+        pageEditSuccessMessage = null;
+        showEditPageDialog = true;
+    }
+
+    private void CloseEditPageDialog()
+    {
+        showEditPageDialog = false;
+        editingPage = null;
+        editPageFile = null;
+        pageEditErrorMessage = null;
+        pageEditSuccessMessage = null;
+    }
+
+    private void HandleEditPageFileSelected(InputFileChangeEventArgs e)
+    {
+        editPageFile = e.File;
+        pageEditErrorMessage = null;
+        pageEditSuccessMessage = null;
+    }
+
+    private bool CanSavePageEdit()
+    {
+        if (editingPage == null || editPageNumber <= 0)
+        {
+            return false;
+        }
+
+        // Check for duplicate page number (excluding current page)
+        if (existingPages != null && existingPages.Any(p => p.PageNumber == editPageNumber && p.PageId != editingPage.PageId))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task SavePageChanges()
+    {
+        if (editingPage == null || selectedProject == null || selectedDocumentForPages == null)
+        {
+            return;
+        }
+
+        isEditingPage = true;
+        pageEditErrorMessage = null;
+        pageEditSuccessMessage = null;
+
+        try
+        {
+            // If a new file is provided, validate it first
+            if (editPageFile != null)
+            {
+                const long maxFileSize = 50 * 1024 * 1024; // 50MB
+                if (editPageFile.Size > maxFileSize)
+                {
+                    pageEditErrorMessage = "File size exceeds 50MB limit.";
+                    return;
+                }
+            }
+
+            // If file is being replaced, upload the new file and get the new blob data
+            byte[]? newBlobData = null;
+            long? newFileSize = null;
+            string? newContentType = null;
+            string? newChecksum = null;
+
+            if (editPageFile != null)
+            {
+                // Read the file into memory
+                using var ms = new MemoryStream();
+                await editPageFile.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024).CopyToAsync(ms);
+                newBlobData = ms.ToArray();
+                newFileSize = newBlobData.Length;
+                newContentType = editPageFile.ContentType;
+
+                // Calculate MD5 checksum (32 characters to match database column)
+                using var md5 = System.Security.Cryptography.MD5.Create();
+                var hashBytes = md5.ComputeHash(newBlobData);
+                newChecksum = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+            }
+
+            // Update the page in the database
+            var sql = $@"
+                UPDATE [{selectedProject.SchemaName}].[DocumentPage]
+                SET 
+                    PageNumber = {{0}},
+                    PageReference = {{1}},
+                    ModifiedOn = {{2}}";
+
+            var parameters = new List<object>
+            {
+                editPageNumber,
+                string.IsNullOrWhiteSpace(editPageReference) ? (object?)null! : editPageReference,
+                DateTime.UtcNow
+            };
+
+            int paramIndex = 3;
+            
+            // Add blob data parameters if file is being replaced
+            if (newBlobData != null)
+            {
+                sql += $@",
+                    FileContent = {{{paramIndex}}},
+                    FileSize = {{{paramIndex + 1}}},
+                    ContentType = {{{paramIndex + 2}}},
+                    ChecksumMD5 = {{{paramIndex + 3}}}";
+                
+                parameters.Add(newBlobData);
+                parameters.Add(newFileSize!);
+                parameters.Add(newContentType!);
+                parameters.Add(newChecksum!);
+            }
+
+            sql += $@"
+                WHERE PageId = {{{parameters.Count}}}";
+            
+            parameters.Add(editingPage.PageId);
+
+            var rowsAffected = await DbContext.Database.ExecuteSqlRawAsync(sql, parameters.ToArray()!);
+
+            if (rowsAffected > 0)
+            {
+                pageEditSuccessMessage = editPageFile != null 
+                    ? "Page updated successfully with new file!" 
+                    : "Page details updated successfully!";
+                
+                // Reload existing pages
+                await LoadExistingPages();
+                
+                // Close dialog after delay
+                await Task.Delay(1500);
+                CloseEditPageDialog();
+            }
+            else
+            {
+                pageEditErrorMessage = "No changes were made to the page.";
+            }
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message.Contains("duplicate key") || ex.Message.Contains("unique index"))
+            {
+                pageEditErrorMessage = $"Page {editPageNumber} already exists. Please choose a different page number.";
+            }
+            else
+            {
+                pageEditErrorMessage = $"Error updating page: {ex.Message}";
+            }
+        }
+        finally
+        {
+            isEditingPage = false;
+        }
+    }
+
+    private async Task DeletePage()
+    {
+        if (editingPage == null || selectedProject == null)
+        {
+            return;
+        }
+
+        // Confirm deletion
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            $"Are you sure you want to delete Page {editingPage.PageNumber}? This action cannot be undone.");
+        
+        if (!confirmed)
+        {
+            return;
+        }
+
+        isEditingPage = true;
+        pageEditErrorMessage = null;
+        pageEditSuccessMessage = null;
+
+        try
+        {
+            var sql = $@"
+                DELETE FROM [{selectedProject.SchemaName}].[DocumentPage]
+                WHERE PageId = {{0}}";
+
+            var rowsAffected = await DbContext.Database.ExecuteSqlRawAsync(sql, editingPage.PageId);
+
+            if (rowsAffected > 0)
+            {
+                pageEditSuccessMessage = $"Page {editingPage.PageNumber} deleted successfully!";
+                
+                // Reload existing pages
+                await LoadExistingPages();
+                
+                // Close dialog after delay
+                await Task.Delay(1500);
+                CloseEditPageDialog();
+            }
+            else
+            {
+                pageEditErrorMessage = "Failed to delete page.";
+            }
+        }
+        catch (Exception ex)
+        {
+            pageEditErrorMessage = $"Error deleting page: {ex.Message}";
+        }
+        finally
+        {
+            isEditingPage = false;
+        }
+    }
+}
+
+

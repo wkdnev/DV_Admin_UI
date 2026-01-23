@@ -1,0 +1,59 @@
+@using DV.Admin.UI.Services
+@using DV.Shared.Security
+@inject SessionManagementService SessionManagementService
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+@rendermode InteractiveServer
+
+@if (showSessionInfo && sessionCount > 0)
+{
+    <div class="session-status">
+        <small class="text-muted">
+            <i class="bi bi-people-fill me-1"></i>
+            @sessionCount active session@(sessionCount == 1 ? "" : "s")
+        </small>
+    </div>
+}
+
+@code {
+    [Parameter] public bool ShowForAdmins { get; set; } = true;
+    
+    private bool showSessionInfo = false;
+    private int sessionCount = 0;
+    private System.Threading.Timer? _refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ShowForAdmins)
+        {
+            showSessionInfo = true;
+            await RefreshSessionCount();
+            
+            // Refresh every 30 seconds
+            _refreshTimer = new System.Threading.Timer(async _ => 
+            {
+                await RefreshSessionCount();
+                await InvokeAsync(StateHasChanged);
+            }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+        }
+    }
+
+    private async Task RefreshSessionCount()
+    {
+        try
+        {
+            var sessions = await SessionManagementService.GetActiveSessionsAsync();
+            sessionCount = sessions.Count;
+        }
+        catch
+        {
+            // Ignore errors - this is just informational
+            sessionCount = 0;
+        }
+    }
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+}

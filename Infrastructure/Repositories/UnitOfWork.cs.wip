@@ -1,0 +1,340 @@
+// ============================================================================
+// UnitOfWork.cs - Unit of Work Pattern Implementation
+// ============================================================================
+//
+// Purpose: Implements the Unit of Work pattern to coordinate multiple
+// repository operations within a single transaction context using both
+// SecurityDbContext and AppDbContext.
+//
+// Features:
+// - Multi-context transaction coordination
+// - Repository lifecycle management
+// - Automatic transaction rollback on errors
+// - Lazy repository initialization
+//
+// ============================================================================
+
+using DocViewer_Proto.Security;
+using DocViewer_Proto.Models;
+using DocViewer_Proto.Data;
+using DocViewer_Proto.Infrastructure.Repositories;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+
+namespace DocViewer_Proto.Infrastructure.Repositories;
+
+/// <summary>
+/// Unit of Work implementation coordinating multiple contexts and repositories
+/// </summary>
+public class UnitOfWork : IUnitOfWork
+{
+    private readonly SecurityDbContext _securityContext;
+    private readonly AppDbContext _appContext;
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ILogger<UnitOfWork> _logger;
+    
+    private IDbContextTransaction? _securityTransaction;
+    private IDbContextTransaction? _appTransaction;
+    
+    private IUserRepository? _userRepository;
+    private IDocumentRepository? _documentRepository;
+    private readonly Dictionary<Type, object> _repositories = new();
+    
+    private bool _disposed = false;
+
+    public UnitOfWork(
+        SecurityDbContext securityContext,
+        AppDbContext appContext,
+        IServiceProvider serviceProvider,
+        ILogger<UnitOfWork> logger)
+    {
+        _securityContext = securityContext ?? throw new ArgumentNullException(nameof(securityContext));
+        _appContext = appContext ?? throw new ArgumentNullException(nameof(appContext));
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    // ========================================================================
+    // Repository Properties
+    // ========================================================================
+
+    public IUserRepository Users
+    {
+        get
+        {
+            if (_userRepository == null)
+            {
+                var logger = _serviceProvider.GetRequiredService<ILogger<UserRepository>>();
+                _userRepository = new UserRepository(_securityContext, logger);
+            }
+            return _userRepository;
+        }
+    }
+
+    public IDocumentRepository Documents
+    {
+        get
+        {
+            if (_documentRepository == null)
+            {
+                var logger = _serviceProvider.GetRequiredService<ILogger<DocumentRepository>>();
+                _documentRepository = new DocumentRepository(_appContext, _serviceProvider, logger);
+            }
+            return _documentRepository;
+        }
+    }
+
+    public IRepository<TEntity> GetRepository<TEntity>() where TEntity : class
+    {
+        var entityType = typeof(TEntity);
+        
+        if (_repositories.ContainsKey(entityType))
+        {
+            return (IRepository<TEntity>)_repositories[entityType];
+        }
+
+        // Determine which context to use based on entity type
+        DbContext contextToUse = DetermineContextForEntity<TEntity>();
+        
+        // Create repository instance
+        var repositoryType = typeof(RepositoryBase<,,>).MakeGenericType(entityType, typeof(int), contextToUse.GetType());
+        var loggerType = typeof(ILogger<>).MakeGenericType(repositoryType);
+        var logger = _serviceProvider.GetRequiredService(loggerType);
+        
+        var repository = (IRepository<TEntity>)Activator.CreateInstance(repositoryType, contextToUse, logger)!;
+        _repositories[entityType] = repository;
+        
+        return repository;
+    }
+
+    // ========================================================================
+    // Transaction Management
+    // ========================================================================
+
+    public async Task BeginTransactionAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (_securityTransaction != null || _appTransaction != null)
+            {
+                _logger.LogWarning("Transaction already in progress");
+                return;
+            }
+
+            _securityTransaction = await _securityContext.Database.BeginTransactionAsync(cancellationToken);
+            _appTransaction = await _appContext.Database.BeginTransactionAsync(cancellationToken);
+            
+            _logger.LogDebug("Transactions started for both contexts");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error starting transactions");
+            await RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    public async Task CommitAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Save changes first
+            await SaveChangesAsync(cancellationToken);
+            
+            // Commit transactions
+            if (_securityTransaction != null)
+            {
+                await _securityTransaction.CommitAsync(cancellationToken);
+                _logger.LogDebug("Security context transaction committed");
+            }
+            
+            if (_appTransaction != null)
+            {
+                await _appTransaction.CommitAsync(cancellationToken);
+                _logger.LogDebug("App context transaction committed");
+            }
+            
+            _logger.LogDebug("All transactions committed successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error committing transactions");
+            await RollbackAsync(cancellationToken);
+            throw;
+        }
+        finally
+        {
+            await DisposeTransactionsAsync();
+        }
+    }
+
+    public async Task RollbackAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (_securityTransaction != null)
+            {
+                await _securityTransaction.RollbackAsync(cancellationToken);
+                _logger.LogDebug("Security context transaction rolled back");
+            }
+            
+            if (_appTransaction != null)
+            {
+                await _appTransaction.RollbackAsync(cancellationToken);
+                _logger.LogDebug("App context transaction rolled back");
+            }
+            
+            _logger.LogDebug("All transactions rolled back");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error rolling back transactions");
+            throw;
+        }
+        finally
+        {
+            await DisposeTransactionsAsync();
+        }
+    }
+
+    public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var securityChanges = await _securityContext.SaveChangesAsync(cancellationToken);
+            var appChanges = await _appContext.SaveChangesAsync(cancellationToken);
+            
+            var totalChanges = securityChanges + appChanges;
+            _logger.LogDebug("Saved {TotalChanges} changes (Security: {SecurityChanges}, App: {AppChanges})",
+                totalChanges, securityChanges, appChanges);
+            
+            return totalChanges;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error saving changes");
+            throw;
+        }
+    }
+
+    public async Task ExecuteInTransactionAsync(Func<Task> operation, CancellationToken cancellationToken = default)
+    {
+        await BeginTransactionAsync(cancellationToken);
+        
+        try
+        {
+            await operation();
+            await CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    public async Task<TResult> ExecuteInTransactionAsync<TResult>(Func<Task<TResult>> operation, CancellationToken cancellationToken = default)
+    {
+        await BeginTransactionAsync(cancellationToken);
+        
+        try
+        {
+            var result = await operation();
+            await CommitAsync(cancellationToken);
+            return result;
+        }
+        catch
+        {
+            await RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    // ========================================================================
+    // Helper Methods
+    // ========================================================================
+
+    private DbContext DetermineContextForEntity<TEntity>() where TEntity : class
+    {
+        var entityType = typeof(TEntity);
+        
+        // Security entities use SecurityDbContext
+        if (entityType == typeof(ApplicationUser) ||
+            entityType == typeof(UserRole) ||
+            entityType == typeof(ApplicationRole) ||
+            entityType == typeof(Permission) ||
+            entityType == typeof(RolePermission) ||
+            entityType == typeof(ProjectRole) ||
+            entityType == typeof(UserProjectRole) ||
+            entityType == typeof(UserProjectAccess) ||
+            entityType == typeof(UserSession) ||
+            entityType == typeof(AuditLog))
+        {
+            return _securityContext;
+        }
+        
+        // All other entities use AppDbContext
+        return _appContext;
+    }
+
+    private async Task DisposeTransactionsAsync()
+    {
+        if (_securityTransaction != null)
+        {
+            await _securityTransaction.DisposeAsync();
+            _securityTransaction = null;
+        }
+        
+        if (_appTransaction != null)
+        {
+            await _appTransaction.DisposeAsync();
+            _appTransaction = null;
+        }
+    }
+
+    // ========================================================================
+    // Dispose Pattern
+    // ========================================================================
+
+    protected virtual async ValueTask DisposeAsync(bool disposing)
+    {
+        if (!_disposed && disposing)
+        {
+            // Rollback any active transactions
+            if (_securityTransaction != null || _appTransaction != null)
+            {
+                try
+                {
+                    await RollbackAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error during disposal rollback");
+                }
+            }
+            
+            // Dispose repositories
+            foreach (var repository in _repositories.Values)
+            {
+                if (repository is IDisposable disposableRepo)
+                {
+                    disposableRepo.Dispose();
+                }
+            }
+            _repositories.Clear();
+            
+            _disposed = true;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeAsync(true);
+        GC.SuppressFinalize(this);
+    }
+
+    public void Dispose()
+    {
+        DisposeAsync().AsTask().GetAwaiter().GetResult();
+    }
+}

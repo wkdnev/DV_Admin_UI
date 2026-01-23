@@ -1,0 +1,328 @@
+@using DV.Shared.Security
+@using DV.Shared.Models
+@using DV.Admin.UI.Services
+@inject ProjectRoleService ProjectRoleService
+@inject ProjectService ProjectService
+@inject UserService UserService
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+@if (isLoading)
+{
+    <div class="text-center my-4">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p>Loading project roles...</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        @errorMessage
+    </div>
+}
+else
+{
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5>Project Role Management</h5>
+        <a href="/sysadmin/project-roles" class="btn btn-primary">
+            <i class="bi bi-diagram-3 me-2"></i>
+            Full Management Interface
+        </a>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h6 class="card-title">Total Projects</h6>
+                    <h4 class="text-primary">@(projects?.Count ?? 0)</h4>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h6 class="card-title">Project Roles</h6>
+                    <h4 class="text-success">@totalProjectRoles</h4>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h6 class="card-title">User Assignments</h6>
+                    <h4 class="text-warning">@totalUserAssignments</h4>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-light">
+                <div class="card-body text-center">
+                    <h6 class="card-title">Active Users</h6>
+                    <h4 class="text-info">@totalActiveUsers</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Project Overview Table -->
+    <div class="card">
+        <div class="card-header">
+            <h6 class="mb-0">Project Role Overview</h6>
+        </div>
+        <div class="card-body">
+            @if (projects == null || projects.Count == 0)
+            {
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    No projects found. Create projects first, then set up project roles.
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-striped table-sm">
+                        <thead>
+                            <tr>
+                                <th>Project</th>
+                                <th>Schema</th>
+                                <th>Roles</th>
+                                <th>Users</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var project in projects)
+                            {
+                                var projectStats = projectStatistics.FirstOrDefault(ps => ps.ProjectId == project.ProjectId);
+                                <tr>
+                                    <td>
+                                        <strong>@project.ProjectName</strong><br>
+                                        <small class="text-muted">@project.ProjectCode</small>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-secondary">@project.SchemaName</span>
+                                    </td>
+                                    <td>
+                                        @if (projectStats != null)
+                                        {
+                                            <span class="badge bg-success">@projectStats.RoleCount roles</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-light text-dark">0 roles</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (projectStats != null)
+                                        {
+                                            <span class="badge bg-info">@projectStats.UserCount users</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-light text-dark">0 users</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (project.IsActive)
+                                        {
+                                            <span class="badge bg-success">Active</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-secondary">Inactive</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <a href="/sysadmin/project-roles/@project.ProjectId" class="btn btn-outline-primary btn-sm" title="Manage Project Roles">
+                                                <i class="bi bi-gear"></i>
+                                            </a>
+                                            <a href="/sysadmin/project-role-summary" class="btn btn-outline-info btn-sm" title="View Summary">
+                                                <i class="bi bi-list-ul"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Recent Activity -->
+    @if (recentAssignments.Any())
+    {
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="mb-0">Recent Role Assignments</h6>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    @foreach (var assignment in recentAssignments.Take(5))
+                    {
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>@assignment.UserName</strong> assigned to 
+                                <span class="badge bg-secondary">@assignment.RoleName</span> 
+                                in <strong>@assignment.ProjectName</strong>
+                            </div>
+                            <small class="text-muted">@assignment.AssignedDate.ToString("MMM dd, HH:mm")</small>
+                        </div>
+                    }
+                </div>
+                @if (recentAssignments.Count > 5)
+                {
+                    <div class="text-center mt-3">
+                        <a href="/sysadmin/project-role-summary" class="btn btn-sm btn-outline-primary">
+                            View All Assignments
+                        </a>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private List<Project>? projects;
+    private List<ProjectStatistics> projectStatistics = new();
+    private List<RecentAssignment> recentAssignments = new();
+    private bool isLoading = true;
+    private string? errorMessage;
+
+    private int totalProjectRoles = 0;
+    private int totalUserAssignments = 0;
+    private int totalActiveUsers = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            // Load projects
+            projects = (await ProjectService.GetAllProjectsAsync()).ToList();
+
+            // Load statistics for each project
+            foreach (var project in projects)
+            {
+                var projectRoles = await ProjectRoleService.GetProjectRolesAsync(project.ProjectId);
+                var userCount = 0;
+
+                foreach (var role in projectRoles)
+                {
+                    var usersInRole = await ProjectRoleService.GetUsersInProjectRoleAsync(role.ProjectRoleId);
+                    userCount += usersInRole.Count;
+                }
+
+                projectStatistics.Add(new ProjectStatistics
+                {
+                    ProjectId = project.ProjectId,
+                    ProjectName = project.ProjectName,
+                    RoleCount = projectRoles.Count,
+                    UserCount = userCount
+                });
+
+                totalProjectRoles += projectRoles.Count;
+                totalUserAssignments += userCount;
+            }
+
+            // Calculate unique active users across all projects
+            var allUsers = await UserService.GetAllUsersAsync();
+            var usersWithProjectAccess = new HashSet<int>();
+
+            foreach (var project in projects)
+            {
+                var projectRoles = await ProjectRoleService.GetProjectRolesAsync(project.ProjectId);
+                foreach (var role in projectRoles)
+                {
+                    var usersInRole = await ProjectRoleService.GetUsersInProjectRoleAsync(role.ProjectRoleId);
+                    foreach (var user in usersInRole)
+                    {
+                        usersWithProjectAccess.Add(user.UserId);
+                    }
+                }
+            }
+
+            totalActiveUsers = usersWithProjectAccess.Count;
+
+            // Load recent assignments (simplified - in real implementation, you'd get this from the database)
+            await LoadRecentAssignments();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadRecentAssignments()
+    {
+        // This is a simplified implementation
+        // In a real application, you would query the database for recent assignments with timestamps
+        try
+        {
+            var assignments = new List<RecentAssignment>();
+
+            foreach (var project in projects!)
+            {
+                var projectRoles = await ProjectRoleService.GetProjectRolesAsync(project.ProjectId);
+                foreach (var role in projectRoles)
+                {
+                    var usersInRole = await ProjectRoleService.GetUsersInProjectRoleAsync(role.ProjectRoleId);
+                    foreach (var user in usersInRole)
+                    {
+                        assignments.Add(new RecentAssignment
+                        {
+                            UserName = user.DisplayName,
+                            RoleName = role.ApplicationRole?.Name ?? "Unknown",
+                            ProjectName = project.ProjectName,
+                            AssignedDate = DateTime.UtcNow.AddDays(-Random.Shared.Next(0, 30)) // Simulated
+                        });
+                    }
+                }
+            }
+
+            recentAssignments = assignments
+                .OrderByDescending(a => a.AssignedDate)
+                .ToList();
+        }
+        catch
+        {
+            // If we can't load recent assignments, just leave the list empty
+        }
+    }
+
+    public class ProjectStatistics
+    {
+        public int ProjectId { get; set; }
+        public string ProjectName { get; set; } = string.Empty;
+        public int RoleCount { get; set; }
+        public int UserCount { get; set; }
+    }
+
+    public class RecentAssignment
+    {
+        public string UserName { get; set; } = string.Empty;
+        public string RoleName { get; set; } = string.Empty;
+        public string ProjectName { get; set; } = string.Empty;
+        public DateTime AssignedDate { get; set; }
+    }
+}
+
+

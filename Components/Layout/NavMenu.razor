@@ -1,0 +1,64 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using DV.Shared.Constants
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">DV Admin</a>
+        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+    </div>
+</div>
+
+<div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
+    <nav class="flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+            </NavLink>
+        </div>
+
+        <AuthorizeView Roles="@Roles.GlobalAdminGroup">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="sysadmin">
+                    <span class="bi bi-shield-lock-fill-nav-menu" aria-hidden="true"></span> Global Admin
+                </NavLink>
+            </div>
+        </AuthorizeView>
+
+        <AuthorizeView Roles="@Roles.AdminGroup">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="admin-dashboard">
+                    <span class="bi bi-person-gear-fill-nav-menu" aria-hidden="true"></span> Admin
+                </NavLink>
+            </div>
+        </AuthorizeView>
+
+        <AuthorizeView Roles="@Roles.AuditorGroup">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="auditor-dashboard">
+                    <span class="bi bi-clipboard-check-fill-nav-menu" aria-hidden="true"></span> Auditor
+                </NavLink>
+            </div>
+        </AuthorizeView>
+
+        <AuthorizeView Roles="@Roles.SecurityGroup">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="security-dashboard">
+                    <span class="bi bi-shield-exclamation-fill-nav-menu" aria-hidden="true"></span> Security
+                </NavLink>
+            </div>
+        </AuthorizeView>
+    </nav>
+</div>
+
+@code {
+    private bool collapseNavMenu = true;
+
+    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    private void ToggleNavMenu()
+    {
+        collapseNavMenu = !collapseNavMenu;
+    }
+}

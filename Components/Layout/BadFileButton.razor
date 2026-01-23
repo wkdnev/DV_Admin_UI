@@ -1,0 +1,73 @@
+@* 
+   ============================================================================
+   BadFileButton.razor - Interactive Bad File Report Button
+   ============================================================================
+   
+   Purpose: Provides an interactive button for ReadOnly users to report
+   file quality issues. This component is separate from MainLayout to
+   handle the interactive render mode properly.
+   
+   Created: October 16, 2025
+*@
+
+@using DV.Admin.UI.Services
+@using DV.Admin.UI.Components.Documents
+@using DV.Shared.Security
+@inject RoleContextService RoleContext
+@implements IDisposable
+@rendermode InteractiveServer
+
+@if (isInitialized && RoleContext.CurrentRole?.Name?.Equals("ReadOnly", StringComparison.OrdinalIgnoreCase) == true)
+{
+    <button class="btn btn-outline-warning btn-sm" @onclick="OpenBadFileDialog">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        Bad File
+    </button>
+}
+
+<BadFileReportDialog IsVisible="showBadFileDialog" OnClose="CloseBadFileDialog" />
+
+@code {
+    private bool showBadFileDialog = false;
+    private bool isInitialized = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Initialize role context
+            await RoleContext.InitializeAsync();
+            isInitialized = true;
+            
+            // Subscribe to role changes to update the UI
+            RoleContext.RoleChanged += OnRoleChanged;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"BadFileButton: Error initializing: {ex.Message}");
+        }
+    }
+
+    private void OnRoleChanged(object? sender, RoleChangedEventArgs e)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OpenBadFileDialog()
+    {
+        showBadFileDialog = true;
+    }
+
+    private void CloseBadFileDialog()
+    {
+        showBadFileDialog = false;
+    }
+
+    public void Dispose()
+    {
+        if (RoleContext != null)
+        {
+            RoleContext.RoleChanged -= OnRoleChanged;
+        }
+    }
+}

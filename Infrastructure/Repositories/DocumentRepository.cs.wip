@@ -1,0 +1,391 @@
+// ============================================================================
+// DocumentRepository.cs - Document Repository Implementation
+// ============================================================================
+//
+// Purpose: Provides specialized data access operations for Document and
+// DocumentPage entities, extending the base repository with document-specific
+// queries and multi-schema support.
+//
+// Features:
+// - Multi-schema document queries
+// - BLOB content operations
+// - Document search capabilities
+// - Page management operations
+//
+// ============================================================================
+
+using DocViewer_Proto.Models;
+using DocViewer_Proto.Data;
+using DocViewer_Proto.Infrastructure.Repositories;
+using Microsoft.EntityFrameworkCore;
+using System.Linq.Expressions;
+
+namespace DocViewer_Proto.Infrastructure.Repositories;
+
+/// <summary>
+/// Repository interface for Document entities
+/// </summary>
+public interface IDocumentRepository : IRepository<Document, int>
+{
+    /// <summary>
+    /// Gets documents by project ID across all schemas
+    /// </summary>
+    Task<IEnumerable<Document>> GetDocumentsByProjectIdAsync(int projectId, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets document with pages from specific schema
+    /// </summary>
+    Task<Document?> GetDocumentWithPagesAsync(int documentId, string schemaName, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Search documents by name or description
+    /// </summary>
+    Task<IEnumerable<Document>> SearchDocumentsAsync(string searchTerm, int? projectId = null, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets documents with page counts
+    /// </summary>
+    Task<IEnumerable<DocumentWithPageCount>> GetDocumentsWithPageCountsAsync(int? projectId = null, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets document page content
+    /// </summary>
+    Task<DocumentPage?> GetDocumentPageAsync(int pageId, string schemaName, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets document pages by document ID
+    /// </summary>
+    Task<IEnumerable<DocumentPage>> GetDocumentPagesAsync(int documentId, string schemaName, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Finds the schema containing a specific document
+    /// </summary>
+    Task<string?> FindSchemaForDocumentAsync(int documentId, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Gets document statistics by project
+    /// </summary>
+    Task<DocumentStatistics> GetDocumentStatisticsAsync(int projectId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Document with page count DTO
+/// </summary>
+public class DocumentWithPageCount
+{
+    public int DocumentId { get; set; }
+    public string DocumentName { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public int ProjectId { get; set; }
+    public string ProjectName { get; set; } = string.Empty;
+    public int PageCount { get; set; }
+    public DateTime CreatedDate { get; set; }
+    public DateTime? ModifiedDate { get; set; }
+    public long TotalSizeBytes { get; set; }
+}
+
+/// <summary>
+/// Document statistics DTO
+/// </summary>
+public class DocumentStatistics
+{
+    public int ProjectId { get; set; }
+    public int TotalDocuments { get; set; }
+    public int TotalPages { get; set; }
+    public long TotalSizeBytes { get; set; }
+    public Dictionary<string, int> FileTypeDistribution { get; set; } = new();
+    public DateTime? OldestDocument { get; set; }
+    public DateTime? NewestDocument { get; set; }
+}
+
+/// <summary>
+/// Document repository implementation
+/// </summary>
+public class DocumentRepository : RepositoryBase<Document, int, AppDbContext>, IDocumentRepository
+{
+    private readonly IServiceProvider _serviceProvider;
+    private readonly ILogger<DocumentRepository> _logger;
+
+    public DocumentRepository(AppDbContext context, IServiceProvider serviceProvider, ILogger<DocumentRepository> logger)
+        : base(context, logger)
+    {
+        _serviceProvider = serviceProvider;
+        _logger = logger;
+    }
+
+    public async Task<IEnumerable<Document>> GetDocumentsByProjectIdAsync(int projectId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var documents = await DbSet
+                .Where(d => d.ProjectId == projectId)
+                .Include(d => d.Project)
+                .OrderBy(d => d.DocumentName)
+                .ToListAsync(cancellationToken);
+
+            Logger.LogDebug("Retrieved {Count} documents for project {ProjectId}", documents.Count, projectId);
+            return documents;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error retrieving documents for project {ProjectId}", projectId);
+            throw;
+        }
+    }
+
+    public async Task<Document?> GetDocumentWithPagesAsync(int documentId, string schemaName, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Get document from main context
+            var document = await DbSet
+                .Include(d => d.Project)
+                .FirstOrDefaultAsync(d => d.DocumentId == documentId, cancellationToken);
+
+            if (document == null)
+                return null;
+
+            // Get pages from schema-specific context
+            using var scope = _serviceProvider.CreateScope();
+            var schemaContextFactory = scope.ServiceProvider.GetRequiredService<SchemaDbContextFactory>();
+            await using var schemaContext = schemaContextFactory.CreateContext(schemaName);
+
+            var pages = await schemaContext.DocumentPages
+                .Where(p => p.DocumentId == documentId)
+                .OrderBy(p => p.PageNumber)
+                .ToListAsync(cancellationToken);
+
+            // Note: This is a simplified approach. In a full implementation,
+            // you might want to create a composite object or use projection.
+            Logger.LogDebug("Retrieved document {DocumentId} with {PageCount} pages from schema {SchemaName}",
+                documentId, pages.Count, schemaName);
+
+            return document;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error retrieving document {DocumentId} with pages from schema {SchemaName}",
+                documentId, schemaName);
+            throw;
+        }
+    }
+
+    public async Task<IEnumerable<Document>> SearchDocumentsAsync(string searchTerm, int? projectId = null, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(searchTerm))
+                return Enumerable.Empty<Document>();
+
+            var normalizedSearchTerm = searchTerm.ToLowerInvariant();
+
+            var query = DbSet.AsQueryable();
+
+            if (projectId.HasValue)
+                query = query.Where(d => d.ProjectId == projectId.Value);
+
+            var documents = await query
+                .Where(d => d.DocumentName.ToLower().Contains(normalizedSearchTerm) ||
+                           (d.Description != null && d.Description.ToLower().Contains(normalizedSearchTerm)))
+                .Include(d => d.Project)
+                .OrderBy(d => d.DocumentName)
+                .ToListAsync(cancellationToken);
+
+            Logger.LogDebug("Search for '{SearchTerm}' returned {Count} documents", searchTerm, documents.Count);
+            return documents;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error searching documents with term '{SearchTerm}'", searchTerm);
+            throw;
+        }
+    }
+
+    public async Task<IEnumerable<DocumentWithPageCount>> GetDocumentsWithPageCountsAsync(int? projectId = null, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // This is a complex query that would need to span multiple schemas
+            // For now, returning documents with estimated page counts
+            var query = DbSet.AsQueryable();
+
+            if (projectId.HasValue)
+                query = query.Where(d => d.ProjectId == projectId.Value);
+
+            var documents = await query
+                .Include(d => d.Project)
+                .Select(d => new DocumentWithPageCount
+                {
+                    DocumentId = d.DocumentId,
+                    DocumentName = d.DocumentName,
+                    Description = d.Description,
+                    ProjectId = d.ProjectId,
+                    ProjectName = d.Project.ProjectName,
+                    PageCount = 0, // Would need schema-specific query
+                    CreatedDate = d.CreatedDate,
+                    ModifiedDate = d.ModifiedDate,
+                    TotalSizeBytes = 0 // Would need schema-specific query
+                })
+                .ToListAsync(cancellationToken);
+
+            Logger.LogDebug("Retrieved {Count} documents with page counts", documents.Count);
+            return documents;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error retrieving documents with page counts");
+            throw;
+        }
+    }
+
+    public async Task<DocumentPage?> GetDocumentPageAsync(int pageId, string schemaName, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var schemaContextFactory = scope.ServiceProvider.GetRequiredService<SchemaDbContextFactory>();
+            await using var schemaContext = schemaContextFactory.CreateContext(schemaName);
+
+            var page = await schemaContext.DocumentPages
+                .FirstOrDefaultAsync(p => p.PageId == pageId, cancellationToken);
+
+            Logger.LogDebug("Retrieved document page {PageId} from schema {SchemaName}: {Found}",
+                pageId, schemaName, page != null ? "Found" : "Not Found");
+
+            return page;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error retrieving document page {PageId} from schema {SchemaName}",
+                pageId, schemaName);
+            throw;
+        }
+    }
+
+    public async Task<IEnumerable<DocumentPage>> GetDocumentPagesAsync(int documentId, string schemaName, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var schemaContextFactory = scope.ServiceProvider.GetRequiredService<SchemaDbContextFactory>();
+            await using var schemaContext = schemaContextFactory.CreateContext(schemaName);
+
+            var pages = await schemaContext.DocumentPages
+                .Where(p => p.DocumentId == documentId)
+                .OrderBy(p => p.PageNumber)
+                .ToListAsync(cancellationToken);
+
+            Logger.LogDebug("Retrieved {Count} pages for document {DocumentId} from schema {SchemaName}",
+                pages.Count, documentId, schemaName);
+
+            return pages;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error retrieving pages for document {DocumentId} from schema {SchemaName}",
+                documentId, schemaName);
+            throw;
+        }
+    }
+
+    public async Task<string?> FindSchemaForDocumentAsync(int documentId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Get the document to find its project
+            var document = await DbSet
+                .Include(d => d.Project)
+                .FirstOrDefaultAsync(d => d.DocumentId == documentId, cancellationToken);
+
+            if (document?.Project?.SchemaName == null)
+            {
+                Logger.LogWarning("Document {DocumentId} not found or has no schema", documentId);
+                return null;
+            }
+
+            var schemaName = document.Project.SchemaName;
+            Logger.LogDebug("Found schema {SchemaName} for document {DocumentId}", schemaName, documentId);
+            return schemaName;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error finding schema for document {DocumentId}", documentId);
+            throw;
+        }
+    }
+
+    public async Task<DocumentStatistics> GetDocumentStatisticsAsync(int projectId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var documents = await GetDocumentsByProjectIdAsync(projectId, cancellationToken);
+            var documentList = documents.ToList();
+
+            var statistics = new DocumentStatistics
+            {
+                ProjectId = projectId,
+                TotalDocuments = documentList.Count,
+                TotalPages = 0, // Would need schema-specific queries
+                TotalSizeBytes = 0, // Would need schema-specific queries
+                OldestDocument = documentList.Any() ? documentList.Min(d => d.CreatedDate) : null,
+                NewestDocument = documentList.Any() ? documentList.Max(d => d.CreatedDate) : null
+            };
+
+            Logger.LogDebug("Generated statistics for project {ProjectId}: {TotalDocuments} documents",
+                projectId, statistics.TotalDocuments);
+
+            return statistics;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error generating statistics for project {ProjectId}", projectId);
+            throw;
+        }
+    }
+
+    // ========================================================================
+    // Additional Helper Methods
+    // ========================================================================
+
+    /// <summary>
+    /// Gets recent documents for a project
+    /// </summary>
+    public async Task<IEnumerable<Document>> GetRecentDocumentsAsync(int projectId, int count = 10, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var recentDocuments = await DbSet
+                .Where(d => d.ProjectId == projectId)
+                .Include(d => d.Project)
+                .OrderByDescending(d => d.ModifiedDate ?? d.CreatedDate)
+                .Take(count)
+                .ToListAsync(cancellationToken);
+
+            Logger.LogDebug("Retrieved {Count} recent documents for project {ProjectId}", recentDocuments.Count, projectId);
+            return recentDocuments;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error retrieving recent documents for project {ProjectId}", projectId);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Checks if document exists in any schema
+    /// </summary>
+    public async Task<bool> DocumentExistsAsync(int documentId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var exists = await DbSet.AnyAsync(d => d.DocumentId == documentId, cancellationToken);
+            Logger.LogDebug("Document {DocumentId} exists: {Exists}", documentId, exists);
+            return exists;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error checking if document {DocumentId} exists", documentId);
+            throw;
+        }
+    }
+}

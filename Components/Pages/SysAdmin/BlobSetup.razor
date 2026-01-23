@@ -1,0 +1,522 @@
+@page "/sysadmin/blob-setup"
+@attribute [RoleBasedAuthorization("sysadmin")]
+@using DV.Shared.Security
+@using DV.Shared.Models
+@using DV.Admin.UI.Services
+@using Microsoft.EntityFrameworkCore
+@inject AppDbContext Context
+@inject SchemaBlobMigrationService SchemaMigrationService
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>BLOB Storage Setup</PageTitle>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h3 class="mb-1">BLOB Storage Schema Migration</h3>
+        <p class="text-muted mb-0">Add BLOB storage support to all project schema DocumentPage tables</p>
+    </div>
+    <div>
+        <button class="btn btn-outline-secondary" @onclick="GoBackToDashboard">
+            <i class="bi bi-arrow-left me-2"></i>
+            Back to Dashboard
+        </button>
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <div class="text-center my-4">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p>Checking project schemas...</p>
+    </div>
+}
+else
+{
+    <!-- Schema Overview -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="card-title">Total Schemas</h6>
+                    <h4 class="text-primary">@schemaStatuses.Count</h4>
+                    <small class="text-muted">Active project schemas</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="card-title">Need Migration</h6>
+                    <h4 class="text-warning">@schemaStatuses.Count(s => s.MigrationNeeded)</h4>
+                    <small class="text-muted">Missing BLOB columns</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="card-title">Ready for BLOB</h6>
+                    <h4 class="text-success">@schemaStatuses.Count(s => s.HasBlobColumns)</h4>
+                    <small class="text-muted">BLOB storage ready</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h6 class="card-title">No DocumentPage</h6>
+                    <h4 class="text-secondary">@schemaStatuses.Count(s => !s.HasDocumentPageTable)</h4>
+                    <small class="text-muted">Missing table</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle me-2"></i>
+            @statusMessage
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            @errorMessage
+        </div>
+    }
+
+    <!-- Schema Details -->
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Project Schema Status</h5>
+                </div>
+                <div class="card-body">
+                    @if (!schemaStatuses.Any())
+                    {
+                        <div class="alert alert-warning">
+                            <h6><i class="bi bi-exclamation-triangle me-2"></i>No Active Project Schemas Found</h6>
+                            <p class="mb-2">No active projects with schemas were found. You may need to:</p>
+                            <ul class="mb-0">
+                                <li>Create projects with schemas first</li>
+                                <li>Check that projects are marked as active</li>
+                                <li>Verify project schema names are configured</li>
+                            </ul>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Schema Name</th>
+                                        <th>DocumentPage Table</th>
+                                        <th>BLOB Columns</th>
+                                        <th>Status</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var schema in schemaStatuses)
+                                    {
+                                        <tr>
+                                            <td><strong>@schema.SchemaName</strong></td>
+                                            <td>
+                                                @if (schema.HasDocumentPageTable)
+                                                {
+                                                    <span class="badge bg-success">EXISTS</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-danger">MISSING</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (schema.HasBlobColumns)
+                                                {
+                                                    <span class="badge bg-success">READY</span>
+                                                }
+                                                else if (schema.HasDocumentPageTable)
+                                                {
+                                                    <span class="badge bg-warning">MISSING</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-secondary">N/A</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (schema.HasBlobColumns)
+                                                {
+                                                    <span class="text-success">? BLOB Ready</span>
+                                                }
+                                                else if (schema.MigrationNeeded)
+                                                {
+                                                    <span class="text-warning">? Needs Migration</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">- No Action Needed</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (schema.MigrationNeeded)
+                                                {
+                                                    <button class="btn btn-sm btn-warning" 
+                                                            @onclick="() => MigrateSingleSchema(schema.SchemaName)"
+                                                            disabled="@isProcessing">
+                                                        <i class="bi bi-plus-circle"></i> Add BLOB
+                                                    </button>
+                                                }
+                                                else if (schema.HasBlobColumns)
+                                                {
+                                                    <span class="text-success">?</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        @if (schemaStatuses.Any(s => s.MigrationNeeded))
+                        {
+                            <div class="mt-3">
+                                <button class="btn btn-primary" @onclick="MigrateAllSchemas" disabled="@isProcessing">
+                                    @if (isProcessing)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                    }
+                                    <i class="bi bi-database-gear me-2"></i>
+                                    Migrate All Schemas to BLOB Storage
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="alert alert-success mt-3">
+                                <h6><i class="bi bi-check-circle me-2"></i>All Schemas Ready!</h6>
+                                <p class="mb-2">All project schemas have BLOB storage support. You can now:</p>
+                                <div class="d-flex gap-2">
+                                    <a href="/sysadmin/document-import" class="btn btn-success">
+                                        <i class="bi bi-cloud-upload me-2"></i>
+                                        Upload Documents
+                                    </a>
+                                    <button class="btn btn-outline-secondary" @onclick="CheckStatus">
+                                        <i class="bi bi-arrow-clockwise me-2"></i>
+                                        Recheck Status
+                                    </button>
+                                    <button class="btn btn-outline-info" @onclick="ShowDebugInfo">
+                                        <i class="bi bi-bug me-2"></i>
+                                        Debug Info
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    }
+
+                    @if (migrationResult != null)
+                    {
+                        <div class="mt-4">
+                            <h6>Migration Results:</h6>
+                            <div class="alert @(migrationResult.Success ? "alert-success" : "alert-danger")">
+                                <strong>Migration @(migrationResult.Success ? "Completed" : "Failed")</strong>
+                                @if (migrationResult.Success)
+                                {
+                                    <ul class="mb-0 mt-2">
+                                        <li><strong>Migrated:</strong> @migrationResult.MigratedSchemas.Count schemas</li>
+                                        <li><strong>Already had BLOB:</strong> @migrationResult.AlreadyMigratedSchemas.Count schemas</li>
+                                        <li><strong>Failed:</strong> @migrationResult.FailedSchemas.Count schemas</li>
+                                        <li><strong>Skipped:</strong> @migrationResult.SkippedSchemas.Count schemas</li>
+                                    </ul>
+
+                                    @if (migrationResult.MigratedSchemas.Any())
+                                    {
+                                        <hr>
+                                        <strong>Successfully migrated schemas:</strong>
+                                        <ul class="mb-0">
+                                            @foreach (var schema in migrationResult.MigratedSchemas)
+                                            {
+                                                <li>@schema</li>
+                                            }
+                                        </ul>
+                                    }
+
+                                    @if (migrationResult.FailedSchemas.Any())
+                                    {
+                                        <hr>
+                                        <strong>Failed migrations:</strong>
+                                        <ul class="mb-0">
+                                            @foreach (var failed in migrationResult.FailedSchemas)
+                                            {
+                                                <li><strong>@failed.SchemaName:</strong> @failed.ErrorMessage</li>
+                                            }
+                                        </ul>
+                                    }
+                                }
+                                else
+                                {
+                                    <p class="mb-0">@migrationResult.ErrorMessage</p>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">Schema BLOB Migration</h6>
+                </div>
+                <div class="card-body">
+                    <h6>What This Does:</h6>
+                    <ul class="small">
+                        <li>Scans all active project schemas</li>
+                        <li>Adds BLOB storage columns to DocumentPage tables</li>
+                        <li>Creates performance indexes</li>
+                        <li>Preserves existing data</li>
+                    </ul>
+                    
+                    <h6 class="mt-3">BLOB Columns Added:</h6>
+                    <ul class="small">
+                        <li><code>FileContent</code> - Binary file data</li>
+                        <li><code>FileSize</code> - File size in bytes</li>
+                        <li><code>ContentType</code> - MIME type</li>
+                        <li><code>UploadedDate</code> - Upload timestamp</li>
+                        <li><code>ChecksumMD5</code> - File integrity hash</li>
+                        <li><code>StorageType</code> - Storage method flag</li>
+                    </ul>
+
+                    <div class="alert alert-info mt-3">
+                        <small>
+                            <i class="bi bi-info-circle me-2"></i>
+                            This migration is safe and won't affect existing documents. Both file-based and BLOB storage will work simultaneously.
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (debugInfoList.Any())
+    {
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-bug me-2"></i>
+                            Schema Debug Information
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        @foreach (var debug in debugInfoList)
+                        {
+                            <div class="card mb-3">
+                                <div class="card-header">
+                                    <h6 class="mb-0">Schema: @debug.SchemaName</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <h6>Schema Details:</h6>
+                                            <ul class="list-unstyled small">
+                                                <li><strong>Schema Exists:</strong> @(debug.SchemaExists ? "Yes" : "No")</li>
+                                                <li><strong>Tables Found:</strong> @debug.TablesInSchema.Count</li>
+                                                @if (debug.TablesInSchema.Any())
+                                                {
+                                                    <li><strong>Table Names:</strong> @string.Join(", ", debug.TablesInSchema)</li>
+                                                }
+                                                @if (!string.IsNullOrEmpty(debug.ErrorMessage))
+                                                {
+                                                    <li><strong style="color: red;">Error:</strong> @debug.ErrorMessage</li>
+                                                }
+                                            </ul>
+                                        </div>
+                                        <div class="col-md-6">
+                                            @if (debug.DocumentPageColumns.Any())
+                                            {
+                                                <h6>DocumentPage Columns:</h6>
+                                                <ul class="list-unstyled small">
+                                                    @foreach (var column in debug.DocumentPageColumns)
+                                                    {
+                                                        <li>• @column</li>
+                                                    }
+                                                </ul>
+                                            }
+                                            else if (debug.SchemaExists)
+                                            {
+                                                <p class="text-warning"><strong>No DocumentPage columns found</strong></p>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        <button class="btn btn-outline-secondary" @onclick="ClearDebugInfo">
+                            <i class="bi bi-x-circle me-2"></i>
+                            Clear Debug Info
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private bool isLoading = true;
+    private bool isProcessing = false;
+    private List<SchemaStatus> schemaStatuses = new();
+    private List<SchemaDebugInfo> debugInfoList = new();
+    private string? statusMessage;
+    private string? errorMessage;
+    private SchemaMigrationResult? migrationResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CheckStatus();
+    }
+
+    private async Task CheckStatus()
+    {
+        isLoading = true;
+        errorMessage = null;
+        statusMessage = null;
+        migrationResult = null;
+
+        try
+        {
+            schemaStatuses = await SchemaMigrationService.GetSchemaMigrationStatusAsync();
+            
+            var totalSchemas = schemaStatuses.Count;
+            var needMigration = schemaStatuses.Count(s => s.MigrationNeeded);
+            var blobReady = schemaStatuses.Count(s => s.HasBlobColumns);
+            
+            if (totalSchemas == 0)
+            {
+                statusMessage = "No active project schemas found. Create projects with schemas first.";
+            }
+            else if (needMigration == 0)
+            {
+                statusMessage = $"All {totalSchemas} project schemas are ready for BLOB storage!";
+            }
+            else
+            {
+                statusMessage = $"Found {totalSchemas} project schemas. {needMigration} need BLOB migration, {blobReady} are already ready.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error checking schema status: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task MigrateAllSchemas()
+    {
+        var needMigration = schemaStatuses.Count(s => s.MigrationNeeded);
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            $"Migrate {needMigration} project schemas to support BLOB storage? This will add BLOB columns to each schema's DocumentPage table.");
+
+        if (!confirmed) return;
+
+        isProcessing = true;
+        errorMessage = null;
+        migrationResult = null;
+
+        try
+        {
+            migrationResult = await SchemaMigrationService.MigrateAllSchemasAsync();
+            
+            if (migrationResult.Success)
+            {
+                await CheckStatus(); // Refresh status
+                await JSRuntime.InvokeVoidAsync("alert", 
+                    $"Migration completed! {migrationResult.MigratedSchemas.Count} schemas migrated successfully.");
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Migration failed: {ex.Message}";
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private async Task MigrateSingleSchema(string schemaName)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            $"Add BLOB storage support to the '{schemaName}' schema? This will add BLOB columns to the DocumentPage table.");
+
+        if (!confirmed) return;
+
+        isProcessing = true;
+        errorMessage = null;
+
+        try
+        {
+            await SchemaMigrationService.AddBlobColumnsToSchemaAsync(schemaName);
+            await CheckStatus(); // Refresh status
+            await JSRuntime.InvokeVoidAsync("alert", $"Successfully added BLOB support to schema '{schemaName}'!");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to migrate schema '{schemaName}': {ex.Message}";
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private async Task ShowDebugInfo()
+    {
+        debugInfoList.Clear();
+        isProcessing = true;
+
+        try
+        {
+            var schemas = await SchemaMigrationService.GetActiveProjectSchemasAsync();
+            
+            foreach (var schema in schemas)
+            {
+                var debugInfo = await SchemaMigrationService.GetSchemaDebugInfoAsync(schema);
+                debugInfoList.Add(debugInfo);
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error getting debug info: {ex.Message}";
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private void ClearDebugInfo()
+    {
+        debugInfoList.Clear();
+    }
+
+    private void GoBackToDashboard()
+    {
+        Navigation.NavigateTo("/sysadmin");
+    }
+}
+
+

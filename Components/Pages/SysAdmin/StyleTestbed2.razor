@@ -1,0 +1,449 @@
+@page "/sysadmin/style-testbed2"
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@using DV.Shared.Security
+@rendermode InteractiveServer
+
+<PageTitle>Style Testbed 2 - Dashboard</PageTitle>
+
+<div class="lgreeny-dashboard">
+    <!-- Top Navigation Tabs -->
+    <div class="lgreeny-tabs">
+        <button class="lgreeny-tab" @onclick='() => activeLayout = "horizontal"'>
+            <span class="tab-icon">📊</span> Dashboard
+        </button>
+        <button class="lgreeny-tab">
+            <span class="tab-icon">👥</span> UI Elements
+        </button>
+        <button class="lgreeny-tab">
+            <span class="tab-icon">📱</span> Apps
+        </button>
+        <button class="lgreeny-tab">
+            <span class="tab-icon">📦</span> Components
+        </button>
+        <button class="lgreeny-tab">
+            <span class="tab-icon">📄</span> Pages
+        </button>
+        <button class="lgreeny-tab">
+            <span class="tab-icon">🎨</span> Layouts
+        </button>
+    </div>
+
+    <!-- Layout Toggle -->
+    <div class="lgreeny-layout-toggle">
+        <span class="layout-label">HORIZONTAL</span>
+        <div class="layout-switch">
+            <button class="layout-btn @(activeLayout == "horizontal" ? "active" : "")" @onclick='() => activeLayout = "horizontal"'>
+                Layouts
+            </button>
+            <button class="layout-btn @(activeLayout == "horizontal2" ? "active" : "")" @onclick='() => activeLayout = "horizontal2"'>
+                Horizontal
+            </button>
+        </div>
+    </div>
+
+    <!-- Top Stats Cards -->
+    <div class="lgreeny-stats-row">
+        <div class="lgreeny-stat-card">
+            <div class="stat-header">
+                <span class="stat-title">Number of Sales</span>
+                <span class="stat-icon blue">📊</span>
+            </div>
+            <div class="stat-value">1452</div>
+            <div class="stat-change positive">
+                <span class="badge-sm green">+1.4%</span>
+                <span class="stat-period">From previous period</span>
+            </div>
+        </div>
+
+        <div class="lgreeny-stat-card">
+            <div class="stat-header">
+                <span class="stat-title">Sales Revenue</span>
+                <span class="stat-icon purple">💰</span>
+            </div>
+            <div class="stat-value">$ 38452</div>
+            <div class="stat-change positive">
+                <span class="badge-sm green">+2.8%</span>
+                <span class="stat-period">From previous period</span>
+            </div>
+        </div>
+
+        <div class="lgreeny-stat-card">
+            <div class="stat-header">
+                <span class="stat-title">Average Price</span>
+                <span class="stat-icon teal">📈</span>
+            </div>
+            <div class="stat-value">$ 15.4</div>
+            <div class="stat-change positive">
+                <span class="badge-sm green">+3.8%</span>
+                <span class="stat-period">From previous period</span>
+            </div>
+        </div>
+
+        <div class="lgreeny-stat-card">
+            <div class="stat-header">
+                <span class="stat-title">Sales Analytics</span>
+                <span class="stat-more">⋯</span>
+            </div>
+            <div class="donut-chart">
+                <svg viewBox="0 0 100 100" class="chart-svg">
+                    <circle cx="50" cy="50" r="40" fill="none" stroke="#e5e7eb" stroke-width="20"/>
+                    <circle cx="50" cy="50" r="40" fill="none" stroke="#10b981" stroke-width="20"
+                            stroke-dasharray="75 251" transform="rotate(-90 50 50)"/>
+                    <circle cx="50" cy="50" r="40" fill="none" stroke="#fbbf24" stroke-width="20"
+                            stroke-dasharray="63 251" stroke-dashoffset="-75" transform="rotate(-90 50 50)"/>
+                    <circle cx="50" cy="50" r="40" fill="none" stroke="#3b82f6" stroke-width="20"
+                            stroke-dasharray="113 251" stroke-dashoffset="-138" transform="rotate(-90 50 50)"/>
+                </svg>
+            </div>
+            <div class="chart-legend">
+                <div class="legend-item">
+                    <span class="legend-dot green"></span>
+                    <span>Product A</span>
+                    <strong>42 %</strong>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-dot yellow"></span>
+                    <span>Product B</span>
+                    <strong>26 %</strong>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-dot blue"></span>
+                    <span>Product C</span>
+                    <strong>42 %</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Revenue Analytics Chart -->
+    <div class="lgreeny-chart-card">
+        <div class="chart-header">
+            <h3 class="chart-title">Revenue Analytics</h3>
+            <div class="chart-tabs">
+                <button class="chart-tab active">Today</button>
+                <button class="chart-tab">Weekly</button>
+                <button class="chart-tab">Monthly</button>
+            </div>
+        </div>
+        <div class="chart-body">
+            <div class="chart-container">
+                @for (int i = 0; i < 12; i++)
+                {
+                    int height = revenueData[i];
+                    <div class="chart-bar-group">
+                        <div class="chart-bar-wrapper">
+                            <div class="chart-bar blue" style="height: @(height)%"></div>
+                        </div>
+                        <div class="chart-line-point" style="bottom: @(lineData[i])%"></div>
+                    </div>
+                }
+                <svg class="chart-line-svg" preserveAspectRatio="none">
+                    <polyline points="@GetLinePoints()" fill="none" stroke="#10b981" stroke-width="2"/>
+                </svg>
+            </div>
+            <div class="chart-labels">
+                @foreach (var month in new[] { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" })
+                {
+                    <span class="chart-label">@month</span>
+                }
+            </div>
+        </div>
+        <div class="chart-footer">
+            <div class="chart-stat">
+                <span class="chart-stat-label">This month</span>
+                <span class="chart-stat-value">$12,253 <span class="stat-change-sm green">+2.2 %</span></span>
+            </div>
+            <div class="chart-stat">
+                <span class="chart-stat-label">This Year</span>
+                <span class="chart-stat-value">$ 34,254 <span class="stat-change-sm green">+4.5 %</span></span>
+            </div>
+            <div class="chart-stat">
+                <span class="chart-stat-label">Previous Year</span>
+                <span class="chart-stat-value">$ 32,695</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Row -->
+    <div class="lgreeny-bottom-row">
+        <!-- Sources Panel -->
+        <div class="lgreeny-panel">
+            <div class="panel-header">
+                <h3 class="panel-title">Sources</h3>
+                <span class="panel-more">⋯</span>
+            </div>
+            <div class="panel-body">
+                <div class="sources-header">
+                    <span class="sources-title">User Sources</span>
+                    <span class="sources-value">$ 7652</span>
+                    <span class="sources-change green">+2 %</span>
+                </div>
+                @foreach (var source in sources)
+                {
+                    <div class="source-item">
+                        <div class="source-info">
+                            <span class="source-dot" style="background-color: @source.Color"></span>
+                            <span class="source-name">@source.Name</span>
+                        </div>
+                        <div class="source-chart">
+                            @foreach (var point in source.ChartData)
+                            {
+                                <span class="mini-chart-point" style="height: @(point)%"></span>
+                            }
+                        </div>
+                        <span class="source-value">$ @source.Value</span>
+                    </div>
+                }
+                <button class="lgreeny-btn-primary">View more</button>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="lgreeny-panel">
+            <div class="panel-header">
+                <h3 class="panel-title">Recent Activity Feed</h3>
+                <span class="panel-more">⋯</span>
+            </div>
+            <div class="panel-body">
+                @foreach (var activity in activities)
+                {
+                    <div class="activity-item">
+                        <div class="activity-avatar">@activity.Avatar</div>
+                        <div class="activity-content">
+                            <div class="activity-date">@activity.Date</div>
+                            <div class="activity-text">@activity.Text</div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Revenue by Locations -->
+        <div class="lgreeny-panel">
+            <div class="panel-header">
+                <h3 class="panel-title">Revenue by Locations</h3>
+                <span class="panel-more">⋯</span>
+            </div>
+            <div class="panel-body">
+                <div class="map-placeholder">
+                    <svg viewBox="0 0 300 150" class="usa-map">
+                        <text x="150" y="75" text-anchor="middle" fill="#94a3b8" font-size="14">US Map Visualization</text>
+                        <circle cx="80" cy="60" r="3" fill="#3b82f6"/>
+                        <circle cx="120" cy="70" r="3" fill="#3b82f6"/>
+                        <circle cx="200" cy="65" r="3" fill="#3b82f6"/>
+                        <circle cx="240" cy="75" r="3" fill="#3b82f6"/>
+                    </svg>
+                </div>
+                <div class="location-stats">
+                    <div class="location-item">
+                        <span class="location-name">California</span>
+                        <span class="location-value">$ 2542</span>
+                    </div>
+                    <div class="location-item">
+                        <span class="location-name">Montana</span>
+                        <span class="location-value">$ 2196</span>
+                    </div>
+                    <div class="location-item">
+                        <span class="location-name">Nevada</span>
+                        <span class="location-value">$ 2245</span>
+                    </div>
+                    <div class="location-item">
+                        <span class="location-name">Texas</span>
+                        <span class="location-value">$ 1845</span>
+                    </div>
+                </div>
+                <button class="lgreeny-btn-primary">Learn more</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Earnings Reports and Latest Transactions -->
+    <div class="lgreeny-wide-row">
+        <!-- Earnings Reports -->
+        <div class="lgreeny-panel-sm">
+            <div class="panel-header">
+                <h3 class="panel-title">Earning Reports</h3>
+                <span class="panel-more">⋯</span>
+            </div>
+            <div class="earning-cards">
+                <div class="earning-card">
+                    <div class="earning-icon">💼</div>
+                    <div class="earning-info">
+                        <span class="earning-label">Monthly Earnings</span>
+                        <span class="earning-value">$2,523</span>
+                    </div>
+                    <div class="earning-spinner blue" style="--progress: 75%">
+                        <span class="spinner-value">75%</span>
+                    </div>
+                </div>
+                <div class="earning-card">
+                    <div class="earning-icon">💰</div>
+                    <div class="earning-info">
+                        <span class="earning-label">Monthly Earnings</span>
+                        <span class="earning-value">$11,235</span>
+                    </div>
+                    <div class="earning-spinner green" style="--progress: 60%">
+                        <span class="spinner-value">60%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Latest Transactions -->
+        <div class="lgreeny-panel-wide">
+            <div class="panel-header">
+                <h3 class="panel-title">Latest Transactions</h3>
+                <div class="table-controls">
+                    <span>Show</span>
+                    <select class="table-select">
+                        <option>5</option>
+                        <option>10</option>
+                        <option>25</option>
+                    </select>
+                    <span>entries</span>
+                    <input type="text" placeholder="Search..." class="table-search" />
+                </div>
+                <span class="panel-more">⋯</span>
+            </div>
+            <div class="panel-body no-padding">
+                <table class="lgreeny-table">
+                    <thead>
+                        <tr>
+                            <th>Order ID</th>
+                            <th>Date</th>
+                            <th>Billing Name</th>
+                            <th>Total</th>
+                            <th>Payment Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var transaction in transactions)
+                        {
+                            <tr>
+                                <td><a href="#" class="link-primary">#@transaction.OrderId</a></td>
+                                <td>@transaction.Date</td>
+                                <td>@transaction.BillingName</td>
+                                <td>$@transaction.Total</td>
+                                <td><span class="badge-status @transaction.StatusClass">@transaction.Status</span></td>
+                                <td>
+                                    <button class="btn-icon">✏️</button>
+                                    <button class="btn-icon">🗑️</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <div class="table-footer">
+                    <span class="table-info">Showing 1 to 5 of 23 entries</span>
+                    <div class="table-pagination">
+                        <button class="pagination-btn" disabled>←</button>
+                        <button class="pagination-btn active">1</button>
+                        <button class="pagination-btn">→</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat Panel (Frank Vickery) -->
+    <div class="lgreeny-chat-panel">
+        <div class="chat-header">
+            <div class="chat-user">
+                <div class="chat-avatar">👤</div>
+                <div class="chat-user-info">
+                    <div class="chat-user-name">Frank Vickery</div>
+                    <div class="chat-user-status">● 1289</div>
+                </div>
+            </div>
+        </div>
+        <div class="chat-body">
+            <div class="chat-message sent">
+                <span class="message-text">Hey! I am available</span>
+                <span class="message-time">10:02</span>
+            </div>
+            <div class="chat-divider">
+                <span>Today</span>
+            </div>
+            <div class="chat-message received">
+                <span class="message-text">Hi, How are you? What about our next meeting?</span>
+                <span class="message-time">10:06</span>
+            </div>
+        </div>
+        <div class="chat-footer">
+            <input type="text" placeholder="Enter Message..." class="chat-input" />
+            <button class="chat-send-btn">Send ➤</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string activeLayout = "horizontal";
+    
+    private int[] revenueData = { 45, 75, 55, 60, 80, 65, 55, 70, 75, 60, 80, 65 };
+    private int[] lineData = { 50, 60, 65, 55, 60, 70, 65, 55, 45, 60, 55, 50 };
+    
+    private List<SourceItem> sources = new()
+    {
+        new SourceItem { Name = "Source 1", Value = "7,524", Color = "#3b82f6", ChartData = new[] { 40, 60, 50, 70, 45, 80, 60 } },
+        new SourceItem { Name = "Source 2", Value = "5,742", Color = "#8b5cf6", ChartData = new[] { 50, 40, 60, 55, 70, 50, 65 } },
+        new SourceItem { Name = "Source 3", Value = "5,700", Color = "#fbbf24", ChartData = new[] { 60, 50, 40, 65, 55, 70, 55 } }
+    };
+
+    private List<ActivityItem> activities = new()
+    {
+        new ActivityItem { Avatar = "👤", Date = "04 Apr, 2020 10:15 am", Text = "Responded to need \"Volunteer Activities\"" },
+        new ActivityItem { Avatar = "👤", Date = "21 Mar, 2020 05:24 am", Text = "Added an interest \"Volunteer Activities\"" },
+        new ActivityItem { Avatar = "👤", Date = "17 Mar, 2019 09:32 am", Text = "Joined the group \"Boardsmanship Forum\"" },
+        new ActivityItem { Avatar = "👤", Date = "19 Feb, 2019 12:00 am", Text = "Responded to need \"In-Kind Opportunity\"" }
+    };
+
+    private List<TransactionItem> transactions = new()
+    {
+        new TransactionItem { OrderId = "NZ1563", Date = "28 Mar, 2020", BillingName = "Frank Dean", Total = "164", Status = "Paid", StatusClass = "paid" },
+        new TransactionItem { OrderId = "NZ1564", Date = "28 Mar, 2020", BillingName = "Eddy Torres", Total = "141", Status = "Paid", StatusClass = "paid" },
+        new TransactionItem { OrderId = "NZ1565", Date = "29 Mar, 2020", BillingName = "Jamison Clark", Total = "123", Status = "Paid", StatusClass = "paid" },
+        new TransactionItem { OrderId = "NZ1566", Date = "30 Mar, 2020", BillingName = "Jewel Buckley", Total = "112", Status = "Paid", StatusClass = "paid" },
+        new TransactionItem { OrderId = "NZ1567", Date = "31 Mar, 2020", BillingName = "Jeffrey Waltz", Total = "105", Status = "Paid", StatusClass = "paid" }
+    };
+
+    private string GetLinePoints()
+    {
+        var points = new List<string>();
+        for (int i = 0; i < lineData.Length; i++)
+        {
+            double x = (i * 100.0 / (lineData.Length - 1));
+            double y = 100 - lineData[i];
+            points.Add($"{x:F1},{y:F1}");
+        }
+        return string.Join(" ", points);
+    }
+
+    private class SourceItem
+    {
+        public string Name { get; set; } = "";
+        public string Value { get; set; } = "";
+        public string Color { get; set; } = "";
+        public int[] ChartData { get; set; } = Array.Empty<int>();
+    }
+
+    private class ActivityItem
+    {
+        public string Avatar { get; set; } = "";
+        public string Date { get; set; } = "";
+        public string Text { get; set; } = "";
+    }
+
+    private class TransactionItem
+    {
+        public string OrderId { get; set; } = "";
+        public string Date { get; set; } = "";
+        public string BillingName { get; set; } = "";
+        public string Total { get; set; } = "";
+        public string Status { get; set; } = "";
+        public string StatusClass { get; set; } = "";
+    }
+}
+
+
+

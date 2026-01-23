@@ -1,0 +1,134 @@
+@page "/"
+@using Microsoft.AspNetCore.Components.Authorization
+@using DV.Shared.Constants
+@using System.Security.Claims
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>DV Admin Portal</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        <div class="container mt-5">
+            <div class="text-center mb-5">
+                <h1>DV Admin Portal</h1>
+                <p class="lead">Welcome, <b>@context.User.Identity?.Name</b></p>
+                <p class="text-muted">Select a dashboard to continue</p>
+            </div>
+
+            @if (HasMultipleRoles(context.User))
+            {
+                <div class="row justify-content-center g-4">
+                    <AuthorizeView Roles="@Roles.GlobalAdminGroup" Context="globalCtx">
+                        <div class="col-md-3">
+                            <div class="card h-100 border-danger shadow-sm">
+                                <div class="card-body text-center d-flex flex-column">
+                                    <h5 class="card-title text-danger"><i class="bi bi-shield-lock-fill display-4"></i></h5>
+                                    <h3>Global Admin</h3>
+                                    <p class="card-text flex-grow-1">System configuration and user management.</p>
+                                    <a href="sysadmin" class="btn btn-danger mt-3">Access Dashboard</a>
+                                </div>
+                            </div>
+                        </div>
+                    </AuthorizeView>
+
+                    <AuthorizeView Roles="@Roles.AdminGroup" Context="adminCtx">
+                        <div class="col-md-3">
+                            <div class="card h-100 border-primary shadow-sm">
+                                <div class="card-body text-center d-flex flex-column">
+                                    <h5 class="card-title text-primary"><i class="bi bi-person-gear display-4"></i></h5>
+                                    <h3>Admin</h3>
+                                    <p class="card-text flex-grow-1">Project and document management.</p>
+                                    <a href="admin-dashboard" class="btn btn-primary mt-3">Access Dashboard</a>
+                                </div>
+                            </div>
+                        </div>
+                    </AuthorizeView>
+
+                    <AuthorizeView Roles="@Roles.AuditorGroup" Context="auditorCtx">
+                        <div class="col-md-3">
+                            <div class="card h-100 border-info shadow-sm">
+                                <div class="card-body text-center d-flex flex-column">
+                                    <h5 class="card-title text-info"><i class="bi bi-clipboard-check display-4"></i></h5>
+                                    <h3>Auditor</h3>
+                                    <p class="card-text flex-grow-1">Audit logs and compliance reviews.</p>
+                                    <a href="auditor-dashboard" class="btn btn-info mt-3 text-white">Access Dashboard</a>
+                                </div>
+                            </div>
+                        </div>
+                    </AuthorizeView>
+
+                    <AuthorizeView Roles="@Roles.SecurityGroup" Context="secCtx">
+                        <div class="col-md-3">
+                            <div class="card h-100 border-warning shadow-sm">
+                                <div class="card-body text-center d-flex flex-column">
+                                    <h5 class="card-title text-warning"><i class="bi bi-shield-exclamation display-4"></i></h5>
+                                    <h3>Security</h3>
+                                    <p class="card-text flex-grow-1">Security monitoring and alerts.</p>
+                                    <a href="security-dashboard" class="btn btn-warning mt-3">Access Dashboard</a>
+                                </div>
+                            </div>
+                        </div>
+                    </AuthorizeView>
+                </div>
+            }
+            else
+            {
+               <div class="text-center">
+                   <p>Redirecting to your dashboard...</p>
+                   <div class="spinner-border text-primary" role="status">
+                       <span class="visually-hidden">Loading...</span>
+                   </div>
+               </div>
+            }
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="text-center mt-5">
+            <h1>DV Admin Portal</h1>
+            <p class="lead">Restricted Access System</p>
+            <div class="alert alert-warning d-inline-block p-4 mt-3">
+                <p>You must be authenticated to access this system.</p>
+                <a href="auth/login" class="btn btn-lg btn-success">Log In with SSO</a>
+            </div>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? authenticationStateTask { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (authenticationStateTask != null)
+        {
+            var authState = await authenticationStateTask;
+            var user = authState.User;
+
+            if (user.Identity?.IsAuthenticated == true && !HasMultipleRoles(user))
+            {
+                RedirectToSingleDashboard(user);
+            }
+        }
+    }
+
+    private bool HasMultipleRoles(ClaimsPrincipal user)
+    {
+        int roleCount = 0;
+        if (user.IsInRole(Roles.GlobalAdminGroup)) roleCount++;
+        if (user.IsInRole(Roles.AdminGroup)) roleCount++;
+        if (user.IsInRole(Roles.AuditorGroup)) roleCount++;
+        if (user.IsInRole(Roles.SecurityGroup)) roleCount++;
+        
+        return roleCount > 1;
+    }
+
+    private void RedirectToSingleDashboard(ClaimsPrincipal user)
+    {
+        if (user.IsInRole(Roles.GlobalAdminGroup)) Navigation.NavigateTo("sysadmin");
+        else if (user.IsInRole(Roles.AdminGroup)) Navigation.NavigateTo("admin-dashboard");
+        else if (user.IsInRole(Roles.AuditorGroup)) Navigation.NavigateTo("auditor-dashboard");
+        else if (user.IsInRole(Roles.SecurityGroup)) Navigation.NavigateTo("security-dashboard");
+    }
+}

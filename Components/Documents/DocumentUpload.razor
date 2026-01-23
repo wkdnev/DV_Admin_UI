@@ -1,0 +1,434 @@
+@using DV.Admin.UI.Services
+@using DV.Shared.Security
+@using Microsoft.EntityFrameworkCore
+@using DV.Shared.Models
+@inject DocumentUploadService DocumentUploadService
+@inject DocumentRepository DocumentRepository
+@inject IJSRuntime JSRuntime
+@inject IDbContextFactory<SecurityDbContext> SecurityDbContextFactory
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@rendermode InteractiveServer
+
+<div class="document-upload-component">
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="bi bi-cloud-upload me-2"></i>
+                Document Upload
+            </h5>
+        </div>
+        <div class="card-body">
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    @errorMessage
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(successMessage))
+            {
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle me-2"></i>
+                    @successMessage
+                </div>
+            }
+
+            <!-- Project Selection -->
+            <div class="mb-3">
+                <label class="form-label">Project <span class="text-danger">*</span></label>
+                <select class="form-select" @bind="selectedProjectId" @bind:after="OnProjectChanged">
+                    <option value="">-- Select Project --</option>
+                    @if (projects != null)
+                    {
+                        @foreach (var project in projects)
+                        {
+                            <option value="@project.ProjectId">@project.ProjectName (@project.ProjectCode)</option>
+                        }
+                    }
+                </select>
+                <div class="form-text">
+                    Select which project this document belongs to. This determines the database schema.
+                </div>
+            </div>
+
+            <!-- Document Selection -->
+            <div class="mb-3">
+                <label class="form-label">Document</label>
+                <div class="input-group">
+                    <select class="form-select" @bind="selectedDocumentOption" @bind:after="OnDocumentOptionChanged">
+                        <option value="new">Create New Document</option>
+                        <option value="existing">Add to Existing Document</option>
+                    </select>
+                    @if (selectedDocumentOption == "existing")
+                    {
+                        <input type="number" class="form-control" @bind="documentId" placeholder="Document ID" min="1" />
+                    }
+                </div>
+                @if (selectedDocumentOption == "new")
+                {
+                    <div class="form-text">
+                        A new document will be created in the selected project schema.
+                    </div>
+                }
+                else
+                {
+                    <div class="form-text">
+                        Specify the Document ID to add this page to an existing document.
+                    </div>
+                }
+            </div>
+
+            <!-- Auto-assign Document ID for new documents -->
+            @if (selectedDocumentOption == "new" && selectedProjectId.HasValue)
+            {
+                <div class="mb-3">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>New Document Mode:</strong> Document ID will be automatically assigned when you upload.
+                        <br>Selected Project: <strong>@(selectedProject?.ProjectName)</strong> (Schema: <strong>@(selectedProject?.SchemaName)</strong>)
+                    </div>
+                </div>
+            }
+
+            <div class="mb-3">
+                <label class="form-label">Page Number</label>
+                <input type="number" class="form-control" @bind="pageNumber" placeholder="Enter page number" min="1" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Page Reference (Optional)</label>
+                <input type="text" class="form-control" @bind="pageReference" placeholder="Enter page reference or description" />
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Select File</label>
+                <InputFile class="form-control" OnChange="HandleFileSelected" accept=".pdf,.tiff,.tif,.jpg,.jpeg,.png,.bmp,.gif" />
+                <div class="form-text">
+                    Supported formats: PDF, TIFF, JPEG, PNG, BMP, GIF. Maximum size: 50MB
+                </div>
+            </div>
+
+            @if (selectedFile != null)
+            {
+                <div class="mb-3">
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title">Selected File</h6>
+                            <p class="mb-1"><strong>Name:</strong> @selectedFile.Name</p>
+                            <p class="mb-1"><strong>Size:</strong> @FormatFileSize(selectedFile.Size)</p>
+                            <p class="mb-0"><strong>Type:</strong> @selectedFile.ContentType</p>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary" @onclick="UploadFile" disabled="@(!CanUpload())">
+                    @if (isUploading)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                        <span>Uploading...</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-cloud-upload me-2"></i>
+                        <span>Upload Document</span>
+                    }
+                </button>
+                
+                <button class="btn btn-secondary" @onclick="ClearForm" disabled="@isUploading">
+                    <i class="bi bi-x-circle me-2"></i>
+                    Clear
+                </button>
+            </div>
+
+            @if (isUploading)
+            {
+                <div class="mt-3">
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" 
+                             style="width: 100%">
+                            Processing...
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (uploadedPages.Any())
+    {
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="mb-0">Recently Uploaded Pages</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Project</th>
+                                <th>Document ID</th>
+                                <th>Page #</th>
+                                <th>File Name</th>
+                                <th>Size</th>
+                                <th>Type</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in uploadedPages.Take(10))
+                            {
+                                <tr>
+                                    <td>
+                                        <small class="badge bg-info">@item.ProjectName</small>
+                                    </td>
+                                    <td>@item.DocumentPage.DocumentId</td>
+                                    <td>@item.DocumentPage.PageNumber</td>
+                                    <td>@item.DocumentPage.FileName</td>
+                                    <td>@FormatFileSize(item.DocumentPage.FileSize ?? 0)</td>
+                                    <td>@item.DocumentPage.FileType</td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-outline-primary" 
+                                                    @onclick="() => ViewDocument(item.DocumentPage.PageId)"
+                                                    title="View Document">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                            <button class="btn btn-outline-secondary" 
+                                                    @onclick="() => DownloadDocument(item.DocumentPage.PageId)"
+                                                    title="Download Document">
+                                                <i class="bi bi-download"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int? InitialDocumentId { get; set; }
+    [Parameter] public int? InitialPageNumber { get; set; }
+    [Parameter] public EventCallback<DocumentPage> OnUploadCompleted { get; set; }
+
+    private List<Project>? projects;
+    private int? selectedProjectId;
+    private Project? selectedProject;
+    private string selectedDocumentOption = "new"; // "new" or "existing"
+    private int documentId;
+    private int pageNumber = 1;
+    private string pageReference = string.Empty;
+    private IBrowserFile? selectedFile;
+    private bool isUploading = false;
+    private string? errorMessage;
+    private string? successMessage;
+    private List<UploadedPageInfo> uploadedPages = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Load available projects
+            var projectList = await DocumentRepository.GetProjectsAsync();
+            projects = projectList.ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading projects: {ex.Message}";
+        }
+
+        if (InitialDocumentId.HasValue)
+        {
+            documentId = InitialDocumentId.Value;
+            selectedDocumentOption = "existing";
+        }
+        
+        if (InitialPageNumber.HasValue)
+            pageNumber = InitialPageNumber.Value;
+    }
+
+    private void OnProjectChanged()
+    {
+        selectedProject = projects?.FirstOrDefault(p => p.ProjectId == selectedProjectId);
+        errorMessage = null;
+        successMessage = null;
+    }
+
+    private void OnDocumentOptionChanged()
+    {
+        if (selectedDocumentOption == "new")
+        {
+            documentId = 0; // Will be auto-assigned
+        }
+        errorMessage = null;
+        successMessage = null;
+    }
+
+    private void HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+        errorMessage = null;
+        successMessage = null;
+
+        // Validate file
+        var formFile = new FormFileWrapper(selectedFile);
+        var validation = DocumentUploadService.ValidateFile(formFile);
+        
+        if (!validation.IsValid)
+        {
+            errorMessage = string.Join("; ", validation.Errors);
+            selectedFile = null;
+        }
+    }
+
+    private bool CanUpload()
+    {
+        return !isUploading && 
+               selectedFile != null && 
+               selectedProjectId.HasValue && 
+               pageNumber > 0 &&
+               (selectedDocumentOption == "new" || (selectedDocumentOption == "existing" && documentId > 0));
+    }
+
+    private async Task UploadFile()
+    {
+        if (!CanUpload() || selectedProject == null)
+            return;
+
+        isUploading = true;
+        errorMessage = null;
+        successMessage = null;
+
+        try
+        {
+            // Convert IBrowserFile to IFormFile
+            var formFile = new FormFileWrapper(selectedFile!);
+            
+            DocumentPage uploadedPage;
+
+            if (selectedDocumentOption == "new")
+            {
+                // Create new document and upload page
+                var currentUserId = await ResolveCurrentUserIdAsync();
+                uploadedPage = await DocumentUploadService.CreateDocumentAndUploadPageAsync(
+                    selectedProject.SchemaName,
+                    selectedProjectId!.Value,
+                    pageNumber,
+                    formFile,
+                    string.IsNullOrWhiteSpace(pageReference) ? null : pageReference,
+                    currentUserId,
+                    "");
+            }
+            else
+            {
+                // Upload to existing document
+                var currentUserId = await ResolveCurrentUserIdAsync();
+                uploadedPage = await DocumentUploadService.UploadFileAsync(
+                    documentId, 
+                    pageNumber, 
+                    formFile, 
+                    string.IsNullOrWhiteSpace(pageReference) ? null : pageReference,
+                    currentUserId,
+                    "");
+            }
+
+            // Add to uploaded pages list with project info
+            uploadedPages.Insert(0, new UploadedPageInfo
+            {
+                DocumentPage = uploadedPage,
+                ProjectName = selectedProject.ProjectName
+            });
+
+            successMessage = $"Successfully uploaded {selectedFile!.Name} for Document {uploadedPage.DocumentId}, Page {pageNumber} in project '{selectedProject.ProjectName}'";
+            
+            // Clear form
+            ClearForm();
+
+            // Notify parent component
+            if (OnUploadCompleted.HasDelegate)
+                await OnUploadCompleted.InvokeAsync(uploadedPage);
+
+            await JSRuntime.InvokeVoidAsync("alert", successMessage);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Upload failed: {ex.Message}";
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private void ClearForm()
+    {
+        selectedFile = null;
+        pageReference = string.Empty;
+        errorMessage = null;
+        successMessage = null;
+        
+        // Increment page number for next upload
+        pageNumber++;
+    }
+
+    private async Task ViewDocument(int pageId)
+    {
+        var url = $"/api/DocumentBlob/page/{pageId}";
+        await JSRuntime.InvokeVoidAsync("window.open", url, "_blank");
+    }
+
+    private async Task DownloadDocument(int pageId)
+    {
+        var url = $"/api/DocumentBlob/page/{pageId}/download";
+        await JSRuntime.InvokeVoidAsync("window.open", url, "_blank");
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB" };
+        double len = bytes;
+        int order = 0;
+        while (len >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            len = len / 1024;
+        }
+        return $"{len:0.##} {sizes[order]}";
+    }
+
+    // Helper class to track uploaded pages with project info
+    private class UploadedPageInfo
+    {
+        public DocumentPage DocumentPage { get; set; } = null!;
+        public string ProjectName { get; set; } = string.Empty;
+    }
+
+    private async Task<int> ResolveCurrentUserIdAsync()
+    {
+        try
+        {
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var username = authState.User?.Identity?.Name;
+            if (!string.IsNullOrEmpty(username))
+            {
+                using var secCtx = await SecurityDbContextFactory.CreateDbContextAsync();
+                var user = await secCtx.Users.FirstOrDefaultAsync(u => u.Username == username);
+                if (user != null)
+                    return user.UserId;
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+        return 0;
+    }
+}

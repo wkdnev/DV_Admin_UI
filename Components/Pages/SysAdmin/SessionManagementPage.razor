@@ -1,0 +1,478 @@
+@page "/sysadmin/session-management"
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@using DV.Shared.Security
+@using DV.Admin.UI.Services
+@inject SessionManagementService SessionManagementService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+<PageTitle>Session Management</PageTitle>
+
+<div class="lgreeny-dashboard">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+            <h2 style="margin: 0; color: #1e293b; font-size: 1.75rem; font-weight: 600;">🔌 Session Management</h2>
+            <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.875rem;">Monitor and manage active user sessions</p>
+        </div>
+        <button class="lgreeny-btn-secondary" style="width: auto;" @onclick='() => Navigation.NavigateTo("/sysadmin")'>
+            ← Back to Admin Dashboard
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div style="text-align: center; padding: 3rem;">
+            <div style="color: #3b82f6; font-size: 2rem;">⏳</div>
+            <p style="color: #64748b; margin-top: 1rem;">Loading session data...</p>
+        </div>
+    }
+    else
+    {
+        <!-- Session Statistics Dashboard -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+            <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 0.5rem; padding: 1.25rem; color: white;">
+                <div style="display: flex; align-items: center; margin-bottom: 0.5rem;">
+                    <span style="font-size: 1.5rem; margin-right: 0.5rem;">👥</span>
+                    <h6 style="margin: 0; font-size: 0.875rem; font-weight: 500; opacity: 0.9;">Active Sessions</h6>
+                </div>
+                <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.25rem;">@statistics.TotalActiveSessions</div>
+                <div style="font-size: 0.875rem; opacity: 0.9;">Currently online</div>
+            </div>
+            
+            <div style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); border-radius: 0.5rem; padding: 1.25rem; color: white;">
+                <div style="display: flex; align-items: center; margin-bottom: 0.5rem;">
+                    <span style="font-size: 1.5rem; margin-right: 0.5rem;">📅</span>
+                    <h6 style="margin: 0; font-size: 0.875rem; font-weight: 500; opacity: 0.9;">Today's Sessions</h6>
+                </div>
+                <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.25rem;">@statistics.TotalSessionsToday</div>
+                <div style="font-size: 0.875rem; opacity: 0.9;">@statistics.UniqueUsersToday unique users</div>
+            </div>
+            
+            <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border-radius: 0.5rem; padding: 1.25rem; color: white;">
+                <div style="display: flex; align-items: center; margin-bottom: 0.5rem;">
+                    <span style="font-size: 1.5rem; margin-right: 0.5rem;">⏱️</span>
+                    <h6 style="margin: 0; font-size: 0.875rem; font-weight: 500; opacity: 0.9;">Avg Duration</h6>
+                </div>
+                <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.25rem;">@FormatDuration(statistics.AverageSessionDuration)</div>
+                <div style="font-size: 0.875rem; opacity: 0.9;">Per session</div>
+            </div>
+            
+            <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); border-radius: 0.5rem; padding: 1.25rem; color: white;">
+                <div style="display: flex; align-items: center; margin-bottom: 0.5rem;">
+                    <span style="font-size: 1.5rem; margin-right: 0.5rem;">❌</span>
+                    <h6 style="margin: 0; font-size: 0.875rem; font-weight: 500; opacity: 0.9;">Admin Terminated</h6>
+                </div>
+                <div style="font-size: 2rem; font-weight: 700; margin-bottom: 0.25rem;">@statistics.AdminTerminatedSessions</div>
+                <div style="font-size: 0.875rem; opacity: 0.9;">Total terminated</div>
+            </div>
+        </div>
+
+        <!-- Active Sessions Table -->
+        <div class="lgreeny-panel">
+            <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 class="panel-title">📋 Active Sessions (@activeSessions.Count)</h3>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="lgreeny-btn-secondary" style="padding: 0.375rem 0.75rem; font-size: 0.875rem;" @onclick="RefreshData">
+                        🔄 Refresh
+                    </button>
+                    <button class="lgreeny-btn-primary" style="padding: 0.375rem 0.75rem; font-size: 0.875rem; background: #f59e0b; border-color: #f59e0b;" @onclick="CleanupExpiredSessions">
+                        🗑️ Cleanup Expired
+                    </button>
+                </div>
+            </div>
+            <div class="panel-body" style="padding: 0;">
+                @if (activeSessions.Any())
+                {
+                    <div style="overflow-x: auto;">
+                        <table class="lgreeny-table" style="margin: 0;">
+                            <thead>
+                                <tr>
+                                    <th style="min-width: 200px;">User</th>
+                                    <th>Role</th>
+                                    <th>IP Address</th>
+                                    <th>Started</th>
+                                    <th>Last Activity</th>
+                                    <th>Expires</th>
+                                    <th>Browser</th>
+                                    <th style="text-align: right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var session in activeSessions)
+                                {
+                                    <tr style="@GetSessionRowStyle(session)">
+                                        <td>
+                                            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                                <span style="padding: 0.125rem 0.5rem; background: #64748b; color: white; border-radius: 0.25rem; font-size: 0.75rem;">@session.UserId</span>
+                                                <div>
+                                                    <div style="font-weight: 600; color: #1e293b;">@GetDisplayUsername(session.Username)</div>
+                                                    <small style="color: #94a3b8; font-family: monospace;">@session.SessionKey[..8]...</small>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(session.CurrentRole))
+                                            {
+                                                <span style="@GetRoleBadgeStyle(session.CurrentRole)">
+                                                    @session.CurrentRole
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span style="color: #94a3b8;">-</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <code style="font-size: 0.75rem; color: #64748b;">@session.IpAddress</code>
+                                        </td>
+                                        <td>
+                                            <div style="font-size: 0.875rem;">
+                                                <div style="color: #1e293b;">@session.CreatedAt.ToString("MM/dd HH:mm")</div>
+                                                <div style="color: #94a3b8; font-size: 0.75rem;">@GetTimeAgo(session.CreatedAt) ago</div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div style="font-size: 0.875rem;">
+                                                <div style="color: #1e293b;">@session.LastActivity.ToString("MM/dd HH:mm:ss")</div>
+                                                <div style="color: #94a3b8; font-size: 0.75rem;">@GetTimeAgo(session.LastActivity) ago</div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div style="font-size: 0.875rem;">
+                                                <div style="color: #1e293b;">@session.ExpiresAt.ToString("MM/dd HH:mm")</div>
+                                                @if (session.ExpiresAt <= DateTime.UtcNow.AddMinutes(10))
+                                                {
+                                                    <div style="color: #f59e0b; font-size: 0.75rem;">
+                                                        ⚠️ Expiring soon
+                                                    </div>
+                                                }
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; color: #64748b;" title="@session.UserAgent">
+                                                @GetBrowserInfo(session.UserAgent)
+                                            </div>
+                                        </td>
+                                        <td style="text-align: right;">
+                                            <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                                                <button style="padding: 0.25rem 0.5rem; background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; border-radius: 0.25rem; cursor: pointer; font-size: 0.75rem;" 
+                                                        @onclick="() => ViewSessionDetails(session)"
+                                                        title="View Details">
+                                                    ℹ️
+                                                </button>
+                                                <button style="padding: 0.25rem 0.5rem; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 0.25rem; cursor: pointer; font-size: 0.75rem;" 
+                                                        @onclick="() => ConfirmTerminateSession(session)"
+                                                        title="Terminate Session">
+                                                    ❌
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div style="text-align: center; padding: 3rem; color: #94a3b8;">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">📭</div>
+                        <p style="margin: 0;">No active sessions found</p>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Top Active Users (if any) -->
+        @if (statistics.TopActiveUsers.Any())
+        {
+            <div class="lgreeny-panel" style="margin-top: 1.5rem;">
+                <div class="panel-header">
+                    <h3 class="panel-title">🏆 Most Active Users Today</h3>
+                </div>
+                <div class="panel-body">
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+                        @foreach (var user in statistics.TopActiveUsers)
+                        {
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid #e2e8f0; border-radius: 0.5rem;">
+                                <div>
+                                    <div style="font-weight: 600; color: #1e293b;">@GetDisplayUsername(user.Username)</div>
+                                    <div style="font-size: 0.875rem; color: #64748b;">@user.SessionCount sessions</div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-size: 0.875rem; color: #64748b;">Last: @user.LastActivity.ToString("HH:mm")</div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    }
+
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div style="padding: 1rem; background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 0.5rem; color: #1e40af; margin-top: 1rem;">
+            <strong>ℹ️ Info:</strong> @statusMessage
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.5rem; color: #991b1b; margin-top: 1rem;">
+            <strong>⚠️ Error:</strong> @errorMessage
+        </div>
+    }
+</div>
+
+<!-- Session Details Modal -->
+@if (selectedSession != null)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+        <div style="background: white; border-radius: 0.5rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); max-width: 900px; width: 100%; margin: 1rem; max-height: 90vh; display: flex; flex-direction: column;">
+            <div style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0;">
+                <h3 style="margin: 0; color: #1e293b; font-size: 1.25rem; font-weight: 600;">
+                    🔍 Session Details - @GetDisplayUsername(selectedSession.Username)
+                </h3>
+            </div>
+            <div style="padding: 1.5rem; overflow-y: auto; flex: 1;">
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem;">
+                    <div>
+                        <h6 style="color: #1e293b; font-weight: 600; margin-bottom: 1rem; font-size: 1rem;">Session Information</h6>
+                        <table style="width: 100%; font-size: 0.875rem;">
+                            <tr style="border-bottom: 1px solid #e2e8f0;">
+                                <td style="padding: 0.5rem 0; font-weight: 500; color: #64748b;">Session ID:</td>
+                                <td style="padding: 0.5rem 0; color: #1e293b;"><code style="font-size: 0.75rem;">@selectedSession.SessionKey</code></td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid #e2e8f0;">
+                                <td style="padding: 0.5rem 0; font-weight: 500; color: #64748b;">User ID:</td>
+                                <td style="padding: 0.5rem 0; color: #1e293b;">@selectedSession.UserId</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid #e2e8f0;">
+                                <td style="padding: 0.5rem 0; font-weight: 500; color: #64748b;">Username:</td>
+                                <td style="padding: 0.5rem 0; color: #1e293b;">@selectedSession.Username</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid #e2e8f0;">
+                                <td style="padding: 0.5rem 0; font-weight: 500; color: #64748b;">Current Role:</td>
+                                <td style="padding: 0.5rem 0; color: #1e293b;">@(selectedSession.CurrentRole ?? "None")</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 0.5rem 0; font-weight: 500; color: #64748b;">IP Address:</td>
+                                <td style="padding: 0.5rem 0; color: #1e293b;">@selectedSession.IpAddress</td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div>
+                        <h6 style="color: #1e293b; font-weight: 600; margin-bottom: 1rem; font-size: 1rem;">Timing Information</h6>
+                        <table style="width: 100%; font-size: 0.875rem;">
+                            <tr style="border-bottom: 1px solid #e2e8f0;">
+                                <td style="padding: 0.5rem 0; font-weight: 500; color: #64748b;">Created:</td>
+                                <td style="padding: 0.5rem 0; color: #1e293b;">@selectedSession.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid #e2e8f0;">
+                                <td style="padding: 0.5rem 0; font-weight: 500; color: #64748b;">Last Activity:</td>
+                                <td style="padding: 0.5rem 0; color: #1e293b;">@selectedSession.LastActivity.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            </tr>
+                            <tr style="border-bottom: 1px solid #e2e8f0;">
+                                <td style="padding: 0.5rem 0; font-weight: 500; color: #64748b;">Expires:</td>
+                                <td style="padding: 0.5rem 0; color: #1e293b;">@selectedSession.ExpiresAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 0.5rem 0; font-weight: 500; color: #64748b;">Duration:</td>
+                                <td style="padding: 0.5rem 0; color: #1e293b;">@FormatDuration(selectedSession.LastActivity - selectedSession.CreatedAt)</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                
+                @if (!string.IsNullOrEmpty(selectedSession.UserAgent))
+                {
+                    <h6 style="color: #1e293b; font-weight: 600; margin: 1.5rem 0 1rem 0; font-size: 1rem;">Browser Information</h6>
+                    <div style="padding: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem;">
+                        <code style="font-size: 0.75rem; color: #64748b; word-break: break-all;">@selectedSession.UserAgent</code>
+                    </div>
+                }
+            </div>
+            <div style="padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; display: flex; gap: 0.75rem; justify-content: flex-end;">
+                <button class="lgreeny-btn-secondary" @onclick="CloseSessionDetails">Close</button>
+                <button class="lgreeny-btn-primary" style="background: #ef4444; border-color: #ef4444;" @onclick="() => ConfirmTerminateSession(selectedSession)">
+                    ❌ Terminate Session
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+    private List<UserSession> activeSessions = new();
+    private SessionStatistics statistics = new();
+    private UserSession? selectedSession;
+    private string? statusMessage;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSessionData();
+    }
+
+    private async Task LoadSessionData()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+
+            activeSessions = await SessionManagementService.GetActiveSessionsAsync();
+            statistics = await SessionManagementService.GetSessionStatisticsAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading session data: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadSessionData();
+        statusMessage = "Session data refreshed";
+        StateHasChanged();
+        
+        // Clear status message after 3 seconds
+        await Task.Delay(3000);
+        statusMessage = null;
+        StateHasChanged();
+    }
+
+    private async Task CleanupExpiredSessions()
+    {
+        try
+        {
+            var cleanupCount = await SessionManagementService.CleanupExpiredSessionsAsync();
+            statusMessage = $"Cleaned up {cleanupCount} expired sessions";
+            await LoadSessionData();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error cleaning up sessions: {ex.Message}";
+        }
+    }
+
+    private async Task ConfirmTerminateSession(UserSession session)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            $"Are you sure you want to terminate the session for {GetDisplayUsername(session.Username)}? This will immediately log them out.");
+        
+        if (confirmed)
+        {
+            await TerminateSession(session);
+        }
+    }
+
+    private async Task TerminateSession(UserSession session)
+    {
+        try
+        {
+            var success = await SessionManagementService.TerminateSessionAsync(
+                session.SessionKey, 
+                "System Administrator", 
+                isAdminTermination: true);
+
+            if (success)
+            {
+                statusMessage = $"Session for {GetDisplayUsername(session.Username)} has been terminated";
+                await LoadSessionData();
+                CloseSessionDetails();
+            }
+            else
+            {
+                errorMessage = "Failed to terminate session";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error terminating session: {ex.Message}";
+        }
+    }
+
+    private void ViewSessionDetails(UserSession session)
+    {
+        selectedSession = session;
+    }
+
+    private void CloseSessionDetails()
+    {
+        selectedSession = null;
+    }
+
+    private string GetDisplayUsername(string username)
+    {
+        return username.Contains('\\') ? username.Split('\\')[1] : username;
+    }
+
+    private string GetSessionRowStyle(UserSession session)
+    {
+        if (session.ExpiresAt <= DateTime.UtcNow.AddMinutes(5))
+            return "background: #fef3c7;"; // About to expire
+        
+        if (session.LastActivity < DateTime.UtcNow.AddMinutes(-30))
+            return "background: #f1f5f9;"; // Inactive
+        
+        return "";
+    }
+
+    private string GetRoleBadgeStyle(string role)
+    {
+        var styles = role.ToLower() switch
+        {
+            "sysadmin" => "background: #fee2e2; color: #991b1b;",
+            "editor" => "background: #d1fae5; color: #065f46;",
+            "auditor" => "background: #dbeafe; color: #1e40af;",
+            "dataowner" => "background: #dbeafe; color: #1e40af;",
+            "security" => "background: #fef3c7; color: #92400e;",
+            "readonly" => "background: #f1f5f9; color: #475569;",
+            _ => "background: #1e293b; color: white;"
+        };
+        
+        return $"padding: 0.25rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 500; {styles}";
+    }
+
+    private string GetBrowserInfo(string? userAgent)
+    {
+        if (string.IsNullOrEmpty(userAgent)) return "Unknown";
+        
+        if (userAgent.Contains("Chrome")) return "Chrome";
+        if (userAgent.Contains("Firefox")) return "Firefox";
+        if (userAgent.Contains("Safari")) return "Safari";
+        if (userAgent.Contains("Edge")) return "Edge";
+        
+        return "Other";
+    }
+
+    private string GetTimeAgo(DateTime dateTime)
+    {
+        var timeSpan = DateTime.UtcNow - dateTime;
+        
+        if (timeSpan.TotalMinutes < 1) return "Just now";
+        if (timeSpan.TotalMinutes < 60) return $"{(int)timeSpan.TotalMinutes}m";
+        if (timeSpan.TotalHours < 24) return $"{(int)timeSpan.TotalHours}h";
+        
+        return $"{(int)timeSpan.TotalDays}d";
+    }
+
+    private string FormatDuration(TimeSpan duration)
+    {
+        if (duration.TotalMinutes < 1) return "< 1m";
+        if (duration.TotalHours < 1) return $"{(int)duration.TotalMinutes}m";
+        if (duration.TotalDays < 1) return $"{(int)duration.TotalHours}h {duration.Minutes}m";
+        
+        return $"{(int)duration.TotalDays}d {duration.Hours}h";
+    }
+}
+
+

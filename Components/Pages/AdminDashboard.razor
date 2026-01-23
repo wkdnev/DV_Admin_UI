@@ -1,0 +1,29 @@
+@page "/admin-dashboard"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = "DocViewer_Admin")]
+
+<PageTitle>Admin Dashboard</PageTitle>
+
+<div class="container mt-4">
+    <div class="card border-primary">
+        <div class="card-header bg-primary text-white">
+            <h3><i class="oi oi-person"></i> Admin Dashboard</h3>
+        </div>
+        <div class="card-body">
+            <h5 class="card-title">Project Administration</h5>
+            <p class="card-text">Welcome to the Admin Dashboard. You can manage project-specific settings here.</p>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h6>My Projects</h6>
+                            <p>Manage documents and user access for your assigned projects.</p>
+                            <button class="btn btn-outline-primary">View Projects</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

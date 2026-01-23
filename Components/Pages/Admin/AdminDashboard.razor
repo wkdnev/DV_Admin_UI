@@ -1,0 +1,21 @@
+@page "/admin-dashboard"
+@using DV.Shared.Constants
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = Roles.AdminGroup)]
+
+<PageTitle>Admin Dashboard</PageTitle>
+
+<div class="container mt-4">
+    <div class="card border-primary mb-3">
+        <div class="card-header bg-primary text-white">
+            <h3><i class="bi bi-person-gear"></i> Admin Dashboard</h3>
+        </div>
+        <div class="card-body">
+            <h5 class="card-title">Welcome, Admin</h5>
+            <p class="card-text">You have access to verify documents, manage project settings, and view user assignments.</p>
+            <div class="alert alert-info">
+                This area is restricted to members of <strong>@Roles.AdminGroup</strong>.
+            </div>
+        </div>
+    </div>
+</div>

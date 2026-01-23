@@ -1,0 +1,21 @@
+@page "/security-dashboard"
+@using DV.Shared.Constants
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = Roles.SecurityGroup)]
+
+<PageTitle>Security Dashboard</PageTitle>
+
+<div class="container mt-4">
+    <div class="card border-warning mb-3">
+        <div class="card-header bg-warning text-dark">
+            <h3><i class="bi bi-shield-lock"></i> Security Dashboard</h3>
+        </div>
+        <div class="card-body">
+            <h5 class="card-title">Welcome, Security Officer</h5>
+            <p class="card-text">You have access to security alerts, access logs, and threat monitoring.</p>
+            <div class="alert alert-info">
+                This area is restricted to members of <strong>@Roles.SecurityGroup</strong>.
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,340 @@
+@page "/sysadmin/project-role-summary"
+@using DV.Shared.Security
+@using DV.Shared.Models
+@using DV.Admin.UI.Services
+@using Microsoft.AspNetCore.Authorization
+@inject ProjectRoleService ProjectRoleService
+@inject UserService UserService
+@inject IJSRuntime JSRuntime
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@rendermode InteractiveServer
+
+<PageTitle>Project Role Assignment Summary</PageTitle>
+
+<div class="d-flex align-items-center mb-4">
+    <h3 class="mb-0">Project Role Assignment Summary</h3>
+    <div class="ms-auto">
+        <a href="/sysadmin/project-roles" class="btn btn-primary">
+            <i class="bi bi-pencil"></i> Manage Project Roles
+        </a>
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <div class="text-center my-4">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p>Loading project role assignments...</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+else if (userProjectAccess == null || userProjectAccess.Count == 0)
+{
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>No Project Role Assignments Found</strong>
+        <p class="mb-0">No users have been assigned to project roles yet. Use the <a href="/sysadmin/project-roles">Project Role Management</a> interface to assign users to project-specific roles.</p>
+    </div>
+}
+else
+{
+    <!-- Summary Statistics -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-white bg-primary">
+                <div class="card-body text-center">
+                    <h4>@totalUsers</h4>
+                    <p class="mb-0">Users with Project Access</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-white bg-success">
+                <div class="card-body text-center">
+                    <h4>@totalProjects</h4>
+                    <p class="mb-0">Projects with Assigned Users</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-white bg-warning">
+                <div class="card-body text-center">
+                    <h4>@totalAssignments</h4>
+                    <p class="mb-0">Total Role Assignments</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-white bg-info">
+                <div class="card-body text-center">
+                    <h4>@averageRolesPerUser.ToString("F1")</h4>
+                    <p class="mb-0">Avg Roles per User</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Project-by-Project Breakdown -->
+    <div class="row">
+        @foreach (var projectAccess in userProjectAccess)
+        {
+            <div class="col-lg-6 mb-4">
+                <div class="card">
+                    <div class="card-header bg-light">
+                        <h5 class="mb-0">
+                            <i class="bi bi-folder me-2"></i>
+                            @projectAccess.Project.ProjectName
+                        </h5>
+                        <small class="text-muted">Schema: @projectAccess.Project.SchemaName</small>
+                    </div>
+                    <div class="card-body">
+                        @if (projectAccess.UserRoleAssignments.Count == 0)
+                        {
+                            <div class="alert alert-warning alert-sm">
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                No users assigned to this project yet.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>User</th>
+                                            <th>Role</th>
+                                            <th>Assigned Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var assignment in projectAccess.UserRoleAssignments.OrderBy(a => a.User.DisplayName))
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <strong>@assignment.User.DisplayName</strong><br>
+                                                    <small class="text-muted">@assignment.User.Username</small>
+                                                </td>
+                                                <td>
+                                                    <span class="badge bg-secondary">@assignment.ProjectRole.ApplicationRole?.Name</span>
+                                                </td>
+                                                <td>
+                                                    <small>@assignment.UserProjectRole.AssignedDate.ToString("MMM dd, yyyy")</small>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- User-by-User Breakdown -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-people me-2"></i>
+                        User Access Summary
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Project Access</th>
+                                    <th>Total Roles</th>
+                                    <th>Last Assignment</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var userSummary in userSummaries.OrderBy(u => u.User.DisplayName))
+                                {
+                                    <tr>
+                                        <td>
+                                            <strong>@userSummary.User.DisplayName</strong><br>
+                                            <small class="text-muted">@userSummary.User.Username</small>
+                                        </td>
+                                        <td>
+                                            @foreach (var projectRole in userSummary.ProjectRoles)
+                                            {
+                                                <span class="badge bg-info me-1 mb-1">
+                                                    @projectRole.Project.ProjectName: @projectRole.ProjectRole.ApplicationRole?.Name
+                                                </span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-primary">@userSummary.ProjectRoles.Count</span>
+                                        </td>
+                                        <td>
+                                            @if (userSummary.ProjectRoles.Any())
+                                            {
+                                                <small>@userSummary.ProjectRoles.Max(pr => pr.UserProjectRole.AssignedDate).ToString("MMM dd, yyyy")</small>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ProjectUserAccess>? userProjectAccess;
+    private List<UserRoleSummary> userSummaries = new();
+    private bool isLoading = true;
+    private string? errorMessage;
+
+    // Statistics
+    private int totalUsers = 0;
+    private int totalProjects = 0;
+    private int totalAssignments = 0;
+    private double averageRolesPerUser = 0.0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProjectRoleAssignments();
+    }
+
+    private async Task LoadProjectRoleAssignments()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            var allUsers = await UserService.GetAllUsersAsync();
+            var allProjects = await ProjectRoleService.GetAllProjectsAsync();
+            var projectAccessList = new List<ProjectUserAccess>();
+            var userSummaryDict = new Dictionary<int, UserRoleSummary>();
+
+            foreach (var project in allProjects)
+            {
+                var projectRoles = await ProjectRoleService.GetProjectRolesAsync(project.ProjectId);
+                var projectAssignments = new List<UserRoleAssignment>();
+
+                foreach (var projectRole in projectRoles)
+                {
+                    var usersInRole = await ProjectRoleService.GetUsersInProjectRoleAsync(projectRole.ProjectRoleId);
+                    
+                    foreach (var user in usersInRole)
+                    {
+                        // Get the UserProjectRole for assignment date
+                        var userProjectRole = await GetUserProjectRoleAsync(user.UserId, projectRole.ProjectRoleId);
+                        
+                        var assignment = new UserRoleAssignment
+                        {
+                            User = user,
+                            ProjectRole = projectRole,
+                            UserProjectRole = userProjectRole
+                        };
+                        
+                        projectAssignments.Add(assignment);
+
+                        // Build user summary
+                        if (!userSummaryDict.ContainsKey(user.UserId))
+                        {
+                            userSummaryDict[user.UserId] = new UserRoleSummary
+                            {
+                                User = user,
+                                ProjectRoles = new List<UserProjectRoleInfo>()
+                            };
+                        }
+
+                        userSummaryDict[user.UserId].ProjectRoles.Add(new UserProjectRoleInfo
+                        {
+                            Project = project,
+                            ProjectRole = projectRole,
+                            UserProjectRole = userProjectRole
+                        });
+                    }
+                }
+
+                projectAccessList.Add(new ProjectUserAccess
+                {
+                    Project = project,
+                    UserRoleAssignments = projectAssignments
+                });
+            }
+
+            userProjectAccess = projectAccessList;
+            userSummaries = userSummaryDict.Values.ToList();
+
+            // Calculate statistics
+            CalculateStatistics();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private Task<UserProjectRole> GetUserProjectRoleAsync(int userId, int projectRoleId)
+    {
+        // This is a simplified approach - in a real implementation, you might want to add this to ProjectRoleService
+        // For now, we'll create a basic UserProjectRole object
+        return Task.FromResult(new UserProjectRole
+        {
+            UserId = userId,
+            ProjectRoleId = projectRoleId,
+            AssignedDate = DateTime.UtcNow, // This should come from the database
+            IsActive = true
+        });
+    }
+
+    private void CalculateStatistics()
+    {
+        if (userProjectAccess == null) return;
+
+        totalProjects = userProjectAccess.Count(p => p.UserRoleAssignments.Any());
+        totalUsers = userSummaries.Count;
+        totalAssignments = userSummaries.Sum(u => u.ProjectRoles.Count);
+        averageRolesPerUser = totalUsers > 0 ? (double)totalAssignments / totalUsers : 0.0;
+    }
+
+    public class ProjectUserAccess
+    {
+        public Project Project { get; set; } = null!;
+        public List<UserRoleAssignment> UserRoleAssignments { get; set; } = new();
+    }
+
+    public class UserRoleAssignment
+    {
+        public ApplicationUser User { get; set; } = null!;
+        public ProjectRole ProjectRole { get; set; } = null!;
+        public UserProjectRole UserProjectRole { get; set; } = null!;
+    }
+
+    public class UserRoleSummary
+    {
+        public ApplicationUser User { get; set; } = null!;
+        public List<UserProjectRoleInfo> ProjectRoles { get; set; } = new();
+    }
+
+    public class UserProjectRoleInfo
+    {
+        public Project Project { get; set; } = null!;
+        public ProjectRole ProjectRole { get; set; } = null!;
+        public UserProjectRole UserProjectRole { get; set; } = null!;
+    }
+}
+
+
+

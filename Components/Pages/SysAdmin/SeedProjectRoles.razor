@@ -1,0 +1,184 @@
+@page "/sysadmin/seed-project-roles"
+@using DV.Admin.UI.Data
+@using Microsoft.AspNetCore.Authorization
+@inject ProjectRoleSeeder ProjectRoleSeeder
+@inject IJSRuntime JSRuntime
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@rendermode InteractiveServer
+
+<PageTitle>Seed Project Roles</PageTitle>
+
+<div class="container mt-4">
+    <h3 class="mb-4">Project Role System Setup</h3>
+    
+    <div class="row">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <h5><i class="bi bi-info-circle"></i> Project-Scoped RBAC Setup</h5>
+                <p>This page will initialize the project-scoped role-based access control system with sample data.</p>
+                <p><strong>What this will create:</strong></p>
+                <ul>
+                    <li>Sample projects (Invoices, Correspondence, HR)</li>
+                    <li>Project-specific roles based on application roles (excluding Admin)</li>
+                    <li>Default permission assignments for each project role</li>
+                </ul>
+                <p class="mb-0"><strong>Note:</strong> This is safe to run multiple times - it will only create missing items. The Admin role is intentionally excluded as it's a global system administrator role.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">Initialize Project-Scoped RBAC</h6>
+                </div>
+                <div class="card-body">
+                    @if (isSeeding)
+                    {
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                            <span>Setting up project roles...</span>
+                        </div>
+                        <div class="mt-3">
+                            <div class="progress">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                     role="progressbar" style="width: 100%"></div>
+                            </div>
+                        </div>
+                    }
+                    else if (seedingComplete)
+                    {
+                        <div class="alert alert-success">
+                            <i class="bi bi-check-circle me-2"></i>
+                            <strong>Setup Complete!</strong>
+                            <p class="mb-0">The project-scoped RBAC system has been initialized successfully.</p>
+                        </div>
+                        <div class="mt-3">
+                            <a href="/sysadmin/project-roles" class="btn btn-primary">
+                                <i class="bi bi-diagram-3 me-2"></i>
+                                Manage Project Roles
+                            </a>
+                            <button class="btn btn-secondary ms-2" @onclick="ResetState">
+                                Run Setup Again
+                            </button>
+                        </div>
+                    }
+                    else if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>Setup Failed</strong>
+                            <p class="mb-0">@errorMessage</p>
+                        </div>
+                        <button class="btn btn-warning" @onclick="ResetState">
+                            Try Again
+                        </button>
+                        <div class="mt-2">
+                            <a href="/sysadmin/fresh-start" class="btn btn-outline-danger btn-sm">
+                                <i class="bi bi-arrow-clockwise me-1"></i>
+                                Or Start Completely Fresh
+                            </a>
+                        </div>
+                    }
+                    else
+                    {
+                        <p>Click the button below to initialize the project-scoped role-based access control system.</p>
+                        <button class="btn btn-success btn-lg" @onclick="SeedProjectRoleData">
+                            <i class="bi bi-play-circle me-2"></i>
+                            Initialize Project-Scoped RBAC
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (seedingComplete)
+    {
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">Next Steps</h6>
+                    </div>
+                    <div class="card-body">
+                        <h6>What to do next:</h6>
+                        <ol>
+                            <li><strong>Assign Users to Project Roles:</strong> Use the <a href="/sysadmin/project-roles">Project Role Management</a> interface to assign users to specific roles within each project.</li>
+                            <li><strong>Customize Permissions:</strong> Modify the permissions for each project role to match your organization's needs.</li>
+                            <li><strong>Test Access:</strong> Log in as different users and verify they can only access the projects and features they should.</li>
+                            <li><strong>Review Audit Trail:</strong> The system now tracks who has access to what projects and when assignments were made.</li>
+                        </ol>
+                        
+                        <h6 class="mt-4">Example Scenarios:</h6>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="card border-primary">
+                                    <div class="card-body">
+                                        <h6 class="card-title text-primary">Finance User</h6>
+                                        <p class="card-text small">Editor on Invoices project, ReadOnly on Correspondence project</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-success">
+                                    <div class="card-body">
+                                        <h6 class="card-title text-success">HR Manager</h6>
+                                        <p class="card-text small">Editor on HR project, no access to other projects</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-warning">
+                                    <div class="card-body">
+                                        <h6 class="card-title text-warning">Auditor</h6>
+                                        <p class="card-text small">Auditor role on all projects for compliance monitoring</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool isSeeding = false;
+    private bool seedingComplete = false;
+    private string? errorMessage;
+
+    private async Task SeedProjectRoleData()
+    {
+        isSeeding = true;
+        errorMessage = null;
+        
+        try
+        {
+            await ProjectRoleSeeder.SeedAsync();
+            seedingComplete = true;
+            await JSRuntime.InvokeVoidAsync("alert", "Project-scoped RBAC system initialized successfully!");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            await JSRuntime.InvokeVoidAsync("alert", $"Error during setup: {ex.Message}");
+        }
+        finally
+        {
+            isSeeding = false;
+        }
+    }
+
+    private void ResetState()
+    {
+        isSeeding = false;
+        seedingComplete = false;
+        errorMessage = null;
+    }
+}
+
+
+

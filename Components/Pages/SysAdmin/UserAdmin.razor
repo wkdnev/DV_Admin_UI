@@ -1,0 +1,401 @@
+@page "/sysadmin/users/manage"
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@using DV.Shared.Security
+@using DV.Admin.UI.Services
+@inject UserService UserService
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+<PageTitle>User Administration</PageTitle>
+
+<div class="lgreeny-dashboard">
+    <!-- Page Header -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+            <h2 style="margin: 0; font-size: 1.5rem; font-weight: 600; color: #1e293b;">User Administration</h2>
+            <p style="margin: 0.25rem 0 0 0; font-size: 0.875rem; color: #64748b;">Manage system users and access control</p>
+        </div>
+        <button class="lgreeny-btn-primary" style="width: auto;" @onclick="OpenCreateDialog">
+            <i class="bi bi-person-plus"></i> Create User
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="lgreeny-panel">
+            <div class="panel-body" style="min-height: 200px; display: flex; align-items: center; justify-content: center;">
+                <div style="text-align: center;">
+                    <div style="font-size: 2rem; margin-bottom: 0.5rem; color: #3b82f6;"><Icon Name="refresh" Size="32" Color="#3b82f6" /></div>
+                    <div style="color: #64748b;">Loading users...</div>
+                </div>
+            </div>
+        </div>
+    }
+    else if (errorMessage != null)
+    {
+        <div style="background: #fee2e2; border: 1px solid #fca5a5; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <Icon Name="alert" Size="20" Color="#dc2626" />
+                <div>
+                    <div style="font-weight: 600; color: #991b1b;">Error</div>
+                    <div style="color: #b91c1c; font-size: 0.875rem;">@errorMessage</div>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Stats Cards -->
+        <div class="lgreeny-stats-row" style="margin-bottom: 1.5rem; display: grid !important; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) !important; gap: 0.75rem !important;">
+            <div class="lgreeny-stat-card" style="padding: 0.75rem !important;">
+                <div class="stat-header" style="margin-bottom: 0.5rem !important;">
+                    <span class="stat-title" style="font-size: 0.7rem !important;">Total Users</span>
+                    <span class="stat-icon blue" style="width: 1.25rem !important; height: 1.25rem !important;"><Icon Name="users" Size="12" Color="white" /></span>
+                </div>
+                <div class="stat-value" style="font-size: 1.25rem !important; margin-bottom: 0.375rem !important;">@users.Count</div>
+                <div class="stat-change positive" style="gap: 0.25rem !important; font-size: 0.7rem !important;">
+                    <span class="badge-sm green" style="padding: 0.0625rem 0.25rem !important; font-size: 0.625rem !important;">100%</span>
+                    <span class="stat-period" style="font-size: 0.7rem !important;">All users in system</span>
+                </div>
+            </div>
+
+            <div class="lgreeny-stat-card" style="padding: 0.75rem !important;">
+                <div class="stat-header" style="margin-bottom: 0.5rem !important;">
+                    <span class="stat-title" style="font-size: 0.7rem !important;">Active Users</span>
+                    <span class="stat-icon purple" style="width: 1.25rem !important; height: 1.25rem !important;"><Icon Name="check" Size="12" Color="white" /></span>
+                </div>
+                <div class="stat-value" style="font-size: 1.25rem !important; margin-bottom: 0.375rem !important;">@users.Count(u => u.IsActive)</div>
+                <div class="stat-change positive" style="gap: 0.25rem !important; font-size: 0.7rem !important;">
+                    <span class="badge-sm green" style="padding: 0.0625rem 0.25rem !important; font-size: 0.625rem !important;">@(users.Count > 0 ? (users.Count(u => u.IsActive) * 100 / users.Count) : 0)%</span>
+                    <span class="stat-period" style="font-size: 0.7rem !important;">Currently active</span>
+                </div>
+            </div>
+
+            <div class="lgreeny-stat-card" style="padding: 0.75rem !important;">
+                <div class="stat-header" style="margin-bottom: 0.5rem !important;">
+                    <span class="stat-title" style="font-size: 0.7rem !important;">Inactive Users</span>
+                    <span class="stat-icon teal" style="width: 1.25rem !important; height: 1.25rem !important;"><Icon Name="ban" Size="12" Color="white" /></span>
+                </div>
+                <div class="stat-value" style="font-size: 1.25rem !important; margin-bottom: 0.375rem !important;">@users.Count(u => !u.IsActive)</div>
+                <div class="stat-change" style="gap: 0.25rem !important; font-size: 0.7rem !important;">
+                    <span class="badge-sm" style="background: #fef3c7; color: #92400e; padding: 0.0625rem 0.25rem !important; font-size: 0.625rem !important;">@(users.Count > 0 ? (users.Count(u => !u.IsActive) * 100 / users.Count) : 0)%</span>
+                    <span class="stat-period" style="font-size: 0.7rem !important;">Disabled accounts</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info Alert -->
+        <div style="background: #dbeafe; border: 1px solid #93c5fd; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: start; gap: 0.75rem;">
+                <Icon Name="info" Size="20" Color="#1e40af" />
+                <div>
+                    <div style="font-weight: 600; color: #1e40af; margin-bottom: 0.25rem;">Project-Based Role Management</div>
+                    <div style="color: #1e40af; font-size: 0.875rem;">User roles are managed through <a href="/sysadmin/project-roles" style="color: #1d4ed8; text-decoration: underline;">Project Role Management</a>. Users are assigned roles within specific projects.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- User List Table -->
+        <div class="lgreeny-panel">
+            <div class="panel-header">
+                <h3 class="panel-title">User Database</h3>
+                <span style="color: #94a3b8; font-size: 0.875rem;">@FilteredUsers.Count of @users.Count users</span>
+            </div>
+            <div class="panel-body" style="padding: 1rem; border-bottom: 1px solid #e2e8f0;">
+                <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 250px;">
+                        <input type="text" 
+                               class="table-search" 
+                               @bind="searchText" 
+                               @bind:event="oninput"
+                               placeholder="Search by username, display name, or email..." 
+                               style="width: 100%; margin: 0;" />
+                    </div>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="@(statusFilter == "all" ? "lgreeny-btn-primary" : "lgreeny-btn-secondary")" 
+                                style="width: auto; padding: 0.5rem 1rem;" 
+                                @onclick='() => statusFilter = "all"'>
+                            All (@users.Count)
+                        </button>
+                        <button class="@(statusFilter == "active" ? "lgreeny-btn-primary" : "lgreeny-btn-secondary")" 
+                                style="width: auto; padding: 0.5rem 1rem;" 
+                                @onclick='() => statusFilter = "active"'>
+                            Active (@users.Count(u => u.IsActive))
+                        </button>
+                        <button class="@(statusFilter == "inactive" ? "lgreeny-btn-primary" : "lgreeny-btn-secondary")" 
+                                style="width: auto; padding: 0.5rem 1rem;" 
+                                @onclick='() => statusFilter = "inactive"'>
+                            Inactive (@users.Count(u => !u.IsActive))
+                        </button>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(searchText) || statusFilter != "all")
+                    {
+                        <button class="lgreeny-btn-secondary" 
+                                style="width: auto; padding: 0.5rem 1rem; display: flex; align-items: center; gap: 0.25rem;" 
+                                @onclick="ClearFilters">
+                            <Icon Name="x" Size="16" /> Clear Filters
+                        </button>
+                    }
+                </div>
+            </div>
+            <div class="panel-body no-padding">
+                <table class="lgreeny-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Display Name</th>
+                            <th>Email</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (!FilteredUsers.Any())
+                        {
+                            <tr>
+                                <td colspan="7" style="text-align: center; padding: 2rem; color: #94a3b8;">
+                                    <Icon Name="search" Size="32" Color="#94a3b8" />
+                                    <div style="margin-top: 0.5rem;">No users found matching your search criteria</div>
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var u in FilteredUsers)
+                            {
+                                <tr>
+                                    <td><span style="font-family: monospace; color: #64748b;">@u.UserId.ToString("D4")</span></td>
+                                    <td><strong style="color: #1e293b;">@u.Username</strong></td>
+                                    <td>@u.DisplayName</td>
+                                    <td style="color: #64748b;">@u.Email</td>
+                                    <td>
+                                        @if (u.IsActive)
+                                        {
+                                            <span class="badge-status paid">Active</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge-status" style="background: #fee2e2; color: #991b1b;">Inactive</span>
+                                        }
+                                    </td>
+                                    <td style="font-family: monospace; color: #64748b; font-size: 0.875rem;">@u.CreatedDate.ToString("yyyy-MM-dd")</td>
+                                    <td>
+                                        <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                                            <button class="btn-icon" title="Edit User" @onclick="() => OpenEditDialog(u)">
+                                                <Icon Name="edit" Size="16" />
+                                            </button>
+                                            <button class="btn-icon" title="Delete User" @onclick="() => ConfirmDeleteUser(u)">
+                                                <Icon Name="trash" Size="16" />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@if (showDialog)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+        <div style="background: white; border-radius: 0.5rem; width: 90%; max-width: 500px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem; border-bottom: 1px solid #e2e8f0;">
+                <h3 style="margin: 0; font-size: 1.125rem; font-weight: 600; color: #1e293b;">@((editUser.UserId == 0) ? "Create New User" : "Edit User")</h3>
+                <button @onclick="CloseDialog" style="background: none; border: none; font-size: 1.5rem; color: #94a3b8; cursor: pointer; padding: 0; line-height: 1;"><Icon Name="x" Size="20" /></button>
+            </div>
+            <div style="padding: 1.5rem;">
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; font-size: 0.875rem; font-weight: 500; color: #334155; margin-bottom: 0.5rem;">Username</label>
+                    <input class="table-search" style="width: 100%; margin: 0;" @bind="editUser.Username" placeholder="Enter username..." />
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; font-size: 0.875rem; font-weight: 500; color: #334155; margin-bottom: 0.5rem;">Display Name</label>
+                    <input class="table-search" style="width: 100%; margin: 0;" @bind="editUser.DisplayName" placeholder="Enter display name..." />
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; font-size: 0.875rem; font-weight: 500; color: #334155; margin-bottom: 0.5rem;">Email Address</label>
+                    <input class="table-search" style="width: 100%; margin: 0;" type="email" @bind="editUser.Email" placeholder="Enter email..." />
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.875rem; color: #334155;">
+                        <input type="checkbox" @bind="editUser.IsActive" style="width: 18px; height: 18px; cursor: pointer; accent-color: #3b82f6;" />
+                        <span>Active User</span>
+                    </label>
+                </div>
+            </div>
+            <div style="display: flex; gap: 0.75rem; justify-content: flex-end; padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; background: #f8fafc;">
+                <button @onclick="CloseDialog" style="padding: 0.625rem 1.25rem; background: white; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem; cursor: pointer; color: #64748b;">Cancel</button>
+                <button @onclick="SaveUser" class="lgreeny-btn-primary" style="width: auto;">@((editUser.UserId == 0) ? "Create User" : "Save Changes")</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ApplicationUser> users = new();
+    private ApplicationUser editUser = new();
+    private bool isLoading = true;
+    private bool showDialog = false;
+    private string? errorMessage;
+    private string searchText = "";
+    private string statusFilter = "all";
+
+    private List<ApplicationUser> FilteredUsers
+    {
+        get
+        {
+            var filtered = users.AsEnumerable();
+
+            // Apply status filter
+            if (statusFilter == "active")
+                filtered = filtered.Where(u => u.IsActive);
+            else if (statusFilter == "inactive")
+                filtered = filtered.Where(u => !u.IsActive);
+
+            // Apply search text filter
+            if (!string.IsNullOrWhiteSpace(searchText))
+            {
+                var search = searchText.ToLower();
+                filtered = filtered.Where(u =>
+                    (u.Username?.ToLower().Contains(search) ?? false) ||
+                    (u.DisplayName?.ToLower().Contains(search) ?? false) ||
+                    (u.Email?.ToLower().Contains(search) ?? false)
+                );
+            }
+
+            return filtered.ToList();
+        }
+    }
+
+    private void ClearFilters()
+    {
+        searchText = "";
+        statusFilter = "all";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+
+            users = (await UserService.GetAllUsersAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void OpenCreateDialog()
+    {
+        editUser = new ApplicationUser { IsActive = true, CreatedDate = DateTime.UtcNow };
+        showDialog = true;
+    }
+
+    private void OpenEditDialog(ApplicationUser user)
+    {
+        editUser = new ApplicationUser
+        {
+            UserId = user.UserId,
+            Username = user.Username,
+            DisplayName = user.DisplayName,
+            Email = user.Email,
+            IsActive = user.IsActive,
+            CreatedDate = user.CreatedDate
+        };
+        showDialog = true;
+    }
+
+    private void CloseDialog()
+    {
+        showDialog = false;
+        editUser = new ApplicationUser();
+    }
+
+    private async Task SaveUser()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+
+            if (string.IsNullOrWhiteSpace(editUser.Username))
+            {
+                errorMessage = "Username is required.";
+                return;
+            }
+
+            if (editUser.UserId == 0)
+            {
+                // create
+                await UserService.EnsureUserExistsAsync(editUser.Username, editUser.DisplayName, editUser.Email);
+                await JSRuntime.InvokeVoidAsync("alert", "User created.");
+            }
+            else
+            {
+                // update
+                await UserService.UpdateUserAsync(editUser);
+                await JSRuntime.InvokeVoidAsync("alert", "User updated.");
+            }
+
+            await LoadUsers();
+            CloseDialog();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ConfirmDeleteUser(ApplicationUser user)
+    {
+        var ok = await JSRuntime.InvokeAsync<bool>("confirm", $"Delete user '{user.Username}'?");
+        if (!ok) return;
+        await DeleteUser(user);
+    }
+
+    private async Task DeleteUser(ApplicationUser user)
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = null;
+
+            await UserService.DeleteUserAsync(user.UserId);
+            await JSRuntime.InvokeVoidAsync("alert", $"User {user.Username} deleted.");
+            await LoadUsers();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}
+
+
+

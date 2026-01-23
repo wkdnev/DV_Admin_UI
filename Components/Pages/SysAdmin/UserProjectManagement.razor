@@ -1,0 +1,12 @@
+@page "/sysadmin/access"
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@using Microsoft.AspNetCore.Authorization
+
+<div class="alert alert-info">
+    <h4>Feature Removed</h4>
+    <p>Explicit User Access assignment has been removed. Authorization is now strictly managed via Active Directory Groups configured on each project.</p>
+</div>
+
+@code {
+}
+
