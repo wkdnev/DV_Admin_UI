@@ -104,27 +104,8 @@ public class SecurityDbContext : DbContext
         // REMOVED: ProjectRolePermission entity configuration - permissions system has been removed
         // Authorization is now based on project roles only, without granular permission assignments
 
-        // Configure UserProjectAccess entity
-        modelBuilder.Entity<UserProjectAccess>(entity =>
-        {
-            entity.ToTable("UserProjectAccess", "dbo");
-            entity.HasKey(e => new { e.UserId, e.ProjectId });
-
-            entity.HasOne(e => e.User)
-                .WithMany()
-                .HasForeignKey(e => e.UserId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            // Note: ProjectId is just an int reference, no direct FK to avoid cross-context dependencies
-            entity.Property(e => e.GrantedBy).HasMaxLength(255);
-            entity.Property(e => e.AccessReason).HasMaxLength(500);
-
-            entity.HasIndex(e => new { e.UserId, e.IsActive })
-                .HasDatabaseName("IX_UserProjectAccess_User_Active");
-
-            entity.HasIndex(e => new { e.ProjectId, e.IsActive })
-                .HasDatabaseName("IX_UserProjectAccess_Project_Active");
-        });
+        // REMOVED: UserProjectAccess entity configuration - entity model no longer exists
+        // Authorization is now based on AD group membership and project roles only
 
         // Configure AuditLog entity
         modelBuilder.Entity<AuditLog>(entity =>

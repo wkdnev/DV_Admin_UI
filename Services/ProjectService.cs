@@ -120,7 +120,8 @@ public class ProjectService
                 await _context.SaveChangesAsync();
 
                 // Create the database schema within the existing transaction
-                await _schemaService.CreateProjectSchemaAsync(project.SchemaName, useExistingTransaction: true);
+                // Pass _context so SchemaService uses the same connection/transaction
+                await _schemaService.CreateProjectSchemaAsync(project.SchemaName, useExistingTransaction: true, sharedContext: _context);
 
                 await transaction.CommitAsync();
                 return project.ProjectId;
@@ -146,7 +147,8 @@ public class ProjectService
                 .SetProperty(p => p.ProjectCode, project.ProjectCode)
                 .SetProperty(p => p.ProjectName, project.ProjectName)
                 .SetProperty(p => p.FolderPath, project.FolderPath)
-                .SetProperty(p => p.Principal, project.Principal)
+                .SetProperty(p => p.ReadPrincipal, project.ReadPrincipal)
+                .SetProperty(p => p.EditPrincipal, project.EditPrincipal)
                 .SetProperty(p => p.Description, project.Description)
                 .SetProperty(p => p.IsActive, project.IsActive)
             );
@@ -189,7 +191,7 @@ public class ProjectService
                 // Drop the database schema within the existing transaction
                 if (!string.IsNullOrEmpty(project.SchemaName))
                 {
-                    await _schemaService.DropProjectSchemaAsync(project.SchemaName, useExistingTransaction: true);
+                    await _schemaService.DropProjectSchemaAsync(project.SchemaName, useExistingTransaction: true, sharedContext: _context);
                 }
 
                 await transaction.CommitAsync();

@@ -303,8 +303,6 @@
         {
             errorMessage = ex.Message;
             Console.WriteLine($"Error loading projects: {ex}");
-            await JSRuntime.InvokeVoidAsync("alert", $"Error loading projects: {errorMessage}");
-            await JSRuntime.InvokeVoidAsync("console.error", ex.ToString());
         }
         finally
         {

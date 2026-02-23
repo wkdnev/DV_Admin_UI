@@ -49,27 +49,33 @@ public class SchemaService
     {
         Console.WriteLine($"Starting schema creation for: {schemaName}");
         
-        using var transaction = await _context.Database.BeginTransactionAsync();
-        try
+        var strategy = _context.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            await CreateProjectSchemaInternalAsync(schemaName);
-            await transaction.CommitAsync();
-            Console.WriteLine($"Schema creation completed successfully for: {schemaName}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error creating schema {schemaName}: {ex.Message}");
-            Console.WriteLine($"Stack trace: {ex.StackTrace}");
-            await transaction.RollbackAsync();
-            throw;
-        }
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                await CreateProjectSchemaInternalAsync(schemaName);
+                await transaction.CommitAsync();
+                Console.WriteLine($"Schema creation completed successfully for: {schemaName}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error creating schema {schemaName}: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
     }
 
     // ========================================================================
     // Method: CreateProjectSchemaAsync (Overload for existing transaction)
     // ========================================================================
     // Purpose: Creates a new database schema within an existing transaction.
-    public async Task CreateProjectSchemaAsync(string schemaName, bool useExistingTransaction)
+    // When useExistingTransaction is true, uses the provided sharedContext
+    // to ensure all operations run on the same connection/transaction.
+    public async Task CreateProjectSchemaAsync(string schemaName, bool useExistingTransaction, AppDbContext? sharedContext = null)
     {
         if (!useExistingTransaction)
         {
@@ -78,7 +84,7 @@ public class SchemaService
         }
 
         Console.WriteLine($"Creating schema within existing transaction for: {schemaName}");
-        await CreateProjectSchemaInternalAsync(schemaName);
+        await CreateProjectSchemaInternalAsync(schemaName, sharedContext ?? _context);
         Console.WriteLine($"Schema creation completed for: {schemaName}");
     }
 
@@ -86,14 +92,17 @@ public class SchemaService
     // Method: CreateProjectSchemaInternalAsync
     // ========================================================================
     // Purpose: Internal method that creates schema without managing transactions.
-    private async Task CreateProjectSchemaInternalAsync(string schemaName)
+    // Accepts an optional context parameter to allow sharing a connection/transaction
+    // with the calling service (e.g. ProjectService).
+    private async Task CreateProjectSchemaInternalAsync(string schemaName, AppDbContext? ctx = null)
     {
+        var db = ctx ?? _context;
         Console.WriteLine($"Creating schema: {schemaName}");
         
         // Create the schema
         var createSchemaQuery = $"IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{schemaName}') EXEC('CREATE SCHEMA [{schemaName}]')";
         Console.WriteLine($"Creating schema: {schemaName}");
-        await _context.Database.ExecuteSqlRawAsync(createSchemaQuery);
+        await db.Database.ExecuteSqlRawAsync(createSchemaQuery);
 
         // Create Document table in the schema
         var createDocumentTableQuery = $@"
@@ -166,7 +175,7 @@ public class SchemaService
                 )
             END";
         Console.WriteLine($"Creating Document table for schema: {schemaName}");
-        await _context.Database.ExecuteSqlRawAsync(createDocumentTableQuery);
+        await db.Database.ExecuteSqlRawAsync(createDocumentTableQuery);
 
         // Create DocumentPage table in the schema with BLOB storage support
         var createDocumentPageTableQuery = $@"
@@ -221,7 +230,7 @@ public class SchemaService
                 CREATE UNIQUE INDEX [IX_{schemaName}_DocumentPage_DocumentId_PageNumber] ON [{schemaName}].[DocumentPage] ([DocumentId], [PageNumber]);
             END";
         Console.WriteLine($"Creating DocumentPage table for schema: {schemaName}");
-        await _context.Database.ExecuteSqlRawAsync(createDocumentPageTableQuery);
+        await db.Database.ExecuteSqlRawAsync(createDocumentPageTableQuery);
 
         // Create BadFileReport table in the schema
         var createBadFileReportTableQuery = $@"
@@ -257,7 +266,7 @@ public class SchemaService
                 CREATE INDEX [IX_{schemaName}_BadFileReport_ImageStatus] ON [{schemaName}].[BadFileReport] ([ImageStatus]);
             END";
         Console.WriteLine($"Creating BadFileReport table for schema: {schemaName}");
-        await _context.Database.ExecuteSqlRawAsync(createBadFileReportTableQuery);
+        await db.Database.ExecuteSqlRawAsync(createBadFileReportTableQuery);
     }
 
     // ========================================================================
@@ -266,24 +275,28 @@ public class SchemaService
     // Purpose: Drops a project schema and all its tables.
     public async Task DropProjectSchemaAsync(string schemaName)
     {
-        using var transaction = await _context.Database.BeginTransactionAsync();
-        try
+        var strategy = _context.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            await DropProjectSchemaInternalAsync(schemaName);
-            await transaction.CommitAsync();
-        }
-        catch
-        {
-            await transaction.RollbackAsync();
-            throw;
-        }
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                await DropProjectSchemaInternalAsync(schemaName);
+                await transaction.CommitAsync();
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        });
     }
 
     // ========================================================================
     // Method: DropProjectSchemaAsync (Overload for existing transaction)
     // ========================================================================
     // Purpose: Drops a project schema within an existing transaction.
-    public async Task DropProjectSchemaAsync(string schemaName, bool useExistingTransaction)
+    public async Task DropProjectSchemaAsync(string schemaName, bool useExistingTransaction, AppDbContext? sharedContext = null)
     {
         if (!useExistingTransaction)
         {
@@ -291,15 +304,16 @@ public class SchemaService
             return;
         }
 
-        await DropProjectSchemaInternalAsync(schemaName);
+        await DropProjectSchemaInternalAsync(schemaName, sharedContext ?? _context);
     }
 
     // ========================================================================
     // Method: DropProjectSchemaInternalAsync
     // ========================================================================
     // Purpose: Internal method that drops schema without managing transactions.
-    private async Task DropProjectSchemaInternalAsync(string schemaName)
+    private async Task DropProjectSchemaInternalAsync(string schemaName, AppDbContext? ctx = null)
     {
+        var db = ctx ?? _context;
         // Drop tables in reverse dependency order
         var dropTablesQuery = $@"
             IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[{schemaName}].[BadFileReport]') AND type in (N'U'))
@@ -314,7 +328,7 @@ public class SchemaService
             IF EXISTS (SELECT * FROM sys.schemas WHERE name = '{schemaName}')
                 DROP SCHEMA [{schemaName}];";
 
-        await _context.Database.ExecuteSqlRawAsync(dropTablesQuery);
+        await db.Database.ExecuteSqlRawAsync(dropTablesQuery);
     }
 
     // ========================================================================

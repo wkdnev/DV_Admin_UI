@@ -81,7 +81,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             entity.Property(e => e.ProjectCode).IsRequired().HasMaxLength(50); // Makes the "ProjectCode" property required
             entity.Property(e => e.SchemaName).IsRequired().HasMaxLength(128); // Schema name is required
             entity.Property(e => e.FolderPath).HasMaxLength(500); // Optional folder path
-            entity.Property(e => e.Principal).HasMaxLength(255); // Optional principal
+            entity.Property(e => e.ReadPrincipal).HasMaxLength(255); // Read access principal
+            entity.Property(e => e.EditPrincipal).HasMaxLength(255); // Edit access principal
             entity.Property(e => e.Description).HasMaxLength(1000); // Optional description
             entity.Property(e => e.CreatedDate).HasDefaultValueSql("GETUTCDATE()"); // Default creation date
             entity.Property(e => e.IsActive).HasDefaultValue(true); // Default to active

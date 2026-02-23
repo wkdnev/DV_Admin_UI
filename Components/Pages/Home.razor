@@ -16,7 +16,17 @@
                 <p class="text-muted">Select a dashboard to continue</p>
             </div>
 
-            @if (HasMultipleRoles(context.User))
+            @{ var roleCount = GetRoleCount(context.User); }
+            @if (roleCount == 0)
+            {
+                <div class="alert alert-warning d-inline-block p-4 mt-3">
+                    <h4 class="alert-heading">No Admin Roles Assigned</h4>
+                    <p>Your account (<b>@context.User.Identity?.Name</b>) is not a member of any DV admin groups.</p>
+                    <hr />
+                    <p class="mb-0">Required groups: <code>@Roles.GlobalAdminGroup</code>, <code>@Roles.AdminGroup</code>, <code>@Roles.AuditorGroup</code>, or <code>@Roles.SecurityGroup</code></p>
+                </div>
+            }
+            else if (roleCount > 1)
             {
                 <div class="row justify-content-center g-4">
                     <AuthorizeView Roles="@Roles.GlobalAdminGroup" Context="globalCtx">
@@ -106,14 +116,14 @@
             var authState = await authenticationStateTask;
             var user = authState.User;
 
-            if (user.Identity?.IsAuthenticated == true && !HasMultipleRoles(user))
+            if (user.Identity?.IsAuthenticated == true && GetRoleCount(user) == 1)
             {
                 RedirectToSingleDashboard(user);
             }
         }
     }
 
-    private bool HasMultipleRoles(ClaimsPrincipal user)
+    private int GetRoleCount(ClaimsPrincipal user)
     {
         int roleCount = 0;
         if (user.IsInRole(Roles.GlobalAdminGroup)) roleCount++;
@@ -121,7 +131,7 @@
         if (user.IsInRole(Roles.AuditorGroup)) roleCount++;
         if (user.IsInRole(Roles.SecurityGroup)) roleCount++;
         
-        return roleCount > 1;
+        return roleCount;
     }
 
     private void RedirectToSingleDashboard(ClaimsPrincipal user)

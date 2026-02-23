@@ -43,10 +43,7 @@ public class RoleContextService
     private readonly AuthenticationStateProvider _authStateProvider;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<RoleContextService> _logger;
-    private readonly UserService _userService;
-    private readonly FirstUserAdminService _firstUserAdminService;
-    private readonly ProjectRoleService _projectRoleService;
-    private readonly SecurityDbContext _securityContext;
+    private readonly IDbContextFactory<SecurityDbContext> _securityContextFactory;
     private readonly SemaphoreSlim _initLock = new(1, 1);
     
     private ApplicationRole? _currentRole;
@@ -59,18 +56,12 @@ public class RoleContextService
         AuthenticationStateProvider authStateProvider, 
         IServiceProvider serviceProvider, 
         ILogger<RoleContextService> logger,
-        UserService userService,
-        FirstUserAdminService firstUserAdminService,
-        ProjectRoleService projectRoleService,
-        SecurityDbContext securityContext)
+        IDbContextFactory<SecurityDbContext> securityContextFactory)
     {
         _authStateProvider = authStateProvider;
         _serviceProvider = serviceProvider;
         _logger = logger;
-        _userService = userService;
-        _firstUserAdminService = firstUserAdminService;
-        _projectRoleService = projectRoleService;
-        _securityContext = securityContext;
+        _securityContextFactory = securityContextFactory;
     }
 
     // ========================================================================
@@ -152,29 +143,33 @@ public class RoleContextService
 
             _logger.LogInformation($"RoleContextService: Initializing for user: {_currentUsername}");
 
-            // Use injected services directly - they share the same scope as this service
-            // No need to create a child scope
+            // Create a child scope for DB operations to avoid disposed context issues
+            // during Blazor prerendering (SSR scope gets disposed before async operations complete)
+            using var scope = _serviceProvider.CreateScope();
+            var userService = scope.ServiceProvider.GetRequiredService<UserService>();
+            var firstUserAdminService = scope.ServiceProvider.GetRequiredService<FirstUserAdminService>();
+            var projectRoleService = scope.ServiceProvider.GetRequiredService<ProjectRoleService>();
             
             // Ensure the user exists in the database
             var displayName = _currentUsername.Contains('\\') ? _currentUsername.Split('\\')[1] : _currentUsername;
             var email = $"{displayName}@example.com";
             
             // Check if this is the first user and promote to admin if needed
-            var wasFirstUser = await _firstUserAdminService.EnsureFirstUserIsAdminAsync(_currentUsername, displayName, email);
+            var wasFirstUser = await firstUserAdminService.EnsureFirstUserIsAdminAsync(_currentUsername, displayName, email);
             if (wasFirstUser)
             {
                 _logger.LogWarning($"RoleContextService: First user detected - {_currentUsername} promoted to Global Administrator");
             }
             
-            var user = await _userService.EnsureUserExistsAsync(_currentUsername, displayName, email);
+            var user = await userService.EnsureUserExistsAsync(_currentUsername, displayName, email);
             var userId = user.UserId;
             _logger.LogInformation($"RoleContextService: User found/created with ID: {userId}");
 
             // Step 1: Check if user is a global admin
-            var isGlobalAdmin = await _userService.IsGlobalAdminAsync(userId);
+            var isGlobalAdmin = await userService.IsGlobalAdminAsync(userId);
             
             // Step 2: Get project-specific roles - data is already materialized with AsNoTracking
-            var userProjectAccess = await _projectRoleService.GetUserProjectAccessAsync(userId);
+            var userProjectAccess = await projectRoleService.GetUserProjectAccessAsync(userId);
             
             // Extract only the data we need into simple value tuples
             var projectRolesData = userProjectAccess
@@ -191,8 +186,10 @@ public class RoleContextService
             string? sessionRoleName = null;
             try
             {
+                // Use factory to create a fresh context (avoids disposed context during prerendering)
+                await using var securityContext = await _securityContextFactory.CreateDbContextAsync();
                 // Query session by username (most reliable) rather than session key
-                var activeSession = await _securityContext.UserSessions
+                var activeSession = await securityContext.UserSessions
                     .AsNoTracking()
                     .Where(s => s.Username == _currentUsername && s.IsActive)
                     .OrderByDescending(s => s.LastActivity)

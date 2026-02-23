@@ -205,6 +205,60 @@ namespace DV.Admin.UI.Controllers
                                 claims.RemoveAll(c => c.Type == "unique_name");
                                 claims.Add(new Claim("unique_name", uniqueName.GetString() ?? normalizedUsername));
                             }
+
+                            // Extract group claims and map them to role claims
+                            if (payloadData.TryGetProperty("groups", out var groups))
+                            {
+                                if (groups.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (var group in groups.EnumerateArray())
+                                    {
+                                        var groupName = group.GetString();
+                                        if (!string.IsNullOrEmpty(groupName))
+                                        {
+                                            claims.Add(new Claim("groups", groupName));
+                                            claims.Add(new Claim("role", groupName));
+                                            Console.WriteLine($"  Added group/role claim: {groupName}");
+                                        }
+                                    }
+                                }
+                                else if (groups.ValueKind == JsonValueKind.String)
+                                {
+                                    var groupName = groups.GetString();
+                                    if (!string.IsNullOrEmpty(groupName))
+                                    {
+                                        claims.Add(new Claim("groups", groupName));
+                                        claims.Add(new Claim("role", groupName));
+                                        Console.WriteLine($"  Added group/role claim: {groupName}");
+                                    }
+                                }
+                            }
+
+                            // Also extract role claims directly if present
+                            if (payloadData.TryGetProperty("role", out var roles))
+                            {
+                                if (roles.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (var role in roles.EnumerateArray())
+                                    {
+                                        var roleName = role.GetString();
+                                        if (!string.IsNullOrEmpty(roleName) && !claims.Any(c => c.Type == "role" && c.Value == roleName))
+                                        {
+                                            claims.Add(new Claim("role", roleName));
+                                            Console.WriteLine($"  Added role claim: {roleName}");
+                                        }
+                                    }
+                                }
+                                else if (roles.ValueKind == JsonValueKind.String)
+                                {
+                                    var roleName = roles.GetString();
+                                    if (!string.IsNullOrEmpty(roleName) && !claims.Any(c => c.Type == "role" && c.Value == roleName))
+                                    {
+                                        claims.Add(new Claim("role", roleName));
+                                        Console.WriteLine($"  Added role claim: {roleName}");
+                                    }
+                                }
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -213,18 +267,94 @@ namespace DV.Admin.UI.Controllers
                     }
                 }
 
+                // Also parse the access token for group/role claims (AD FS often puts groups in access token)
+                if (!string.IsNullOrEmpty(accessToken) && !claims.Any(c => c.Type == "role"))
+                {
+                    var tokenParts = accessToken.Split('.');
+                    if (tokenParts.Length >= 2)
+                    {
+                        try
+                        {
+                            var payload = tokenParts[1];
+                            var paddedPayload = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+                            var payloadBytes = Convert.FromBase64String(paddedPayload.Replace('-', '+').Replace('_', '/'));
+                            var payloadJson = System.Text.Encoding.UTF8.GetString(payloadBytes);
+                            var payloadData = JsonSerializer.Deserialize<JsonElement>(payloadJson);
+
+                            Console.WriteLine($"Access token claims:");
+                            foreach (var prop in payloadData.EnumerateObject())
+                            {
+                                Console.WriteLine($"  AT: {prop.Name} = {prop.Value}");
+                            }
+
+                            // Extract groups from access token
+                            if (payloadData.TryGetProperty("groups", out var atGroups))
+                            {
+                                if (atGroups.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (var group in atGroups.EnumerateArray())
+                                    {
+                                        var groupName = group.GetString();
+                                        if (!string.IsNullOrEmpty(groupName) && !claims.Any(c => c.Type == "role" && c.Value == groupName))
+                                        {
+                                            claims.Add(new Claim("groups", groupName));
+                                            claims.Add(new Claim("role", groupName));
+                                            Console.WriteLine($"  AT: Added group/role claim: {groupName}");
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Extract role from access token
+                            if (payloadData.TryGetProperty("role", out var atRoles))
+                            {
+                                if (atRoles.ValueKind == JsonValueKind.Array)
+                                {
+                                    foreach (var role in atRoles.EnumerateArray())
+                                    {
+                                        var roleName = role.GetString();
+                                        if (!string.IsNullOrEmpty(roleName) && !claims.Any(c => c.Type == "role" && c.Value == roleName))
+                                        {
+                                            claims.Add(new Claim("role", roleName));
+                                            Console.WriteLine($"  AT: Added role claim: {roleName}");
+                                        }
+                                    }
+                                }
+                                else if (atRoles.ValueKind == JsonValueKind.String)
+                                {
+                                    var roleName = atRoles.GetString();
+                                    if (!string.IsNullOrEmpty(roleName) && !claims.Any(c => c.Type == "role" && c.Value == roleName))
+                                    {
+                                        claims.Add(new Claim("role", roleName));
+                                        Console.WriteLine($"  AT: Added role claim: {roleName}");
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Failed to parse access token: {ex.Message}");
+                        }
+                    }
+                }
+
                 // Create identity and sign in
                 var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme, "unique_name", "role");
                 var principal = new ClaimsPrincipal(identity);
+
+                Console.WriteLine($"=== Password Login Successful ===");
+                Console.WriteLine($"User: {normalizedUsername}");
+                Console.WriteLine($"Total claims: {claims.Count}");
+                foreach (var c in claims)
+                {
+                    Console.WriteLine($"  Final claim: {c.Type} = {c.Value}");
+                }
 
                 await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, new AuthenticationProperties
                 {
                     IsPersistent = false,
                     ExpiresUtc = DateTimeOffset.UtcNow.AddHours(8)
                 });
-
-                Console.WriteLine($"=== Password Login Successful ===");
-                Console.WriteLine($"User: {normalizedUsername}");
 
                 return Redirect(returnUrl ?? "/");
             }

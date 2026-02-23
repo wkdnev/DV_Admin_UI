@@ -146,6 +146,9 @@ builder.Services.AddSession(options =>
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+// Cascading auth state for interactive server components (.NET 8 requirement)
+builder.Services.AddCascadingAuthenticationState();
+
 // Register Pooled DbContextFactory for AppDbContext (for Blazor components)
 // This provides both IDbContextFactory<AppDbContext> for factory pattern
 // and scoped AppDbContext instances for dependency injection
