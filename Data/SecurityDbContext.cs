@@ -1,6 +1,6 @@
 using DV.Shared.Security;
-using DV.Shared.Security;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using System.Security;
 
 namespace DV.Admin.UI.Data;
@@ -23,6 +23,9 @@ public class SecurityDbContext : DbContext
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<UserSession> UserSessions => Set<UserSession>();
     public DbSet<SessionActivity> SessionActivities => Set<SessionActivity>();
+    public DbSet<UserCredential> UserCredentials => Set<UserCredential>();
+    public DbSet<AccessGroup> AccessGroups => Set<AccessGroup>();
+    public DbSet<AccessGroupMember> AccessGroupMembers => Set<AccessGroupMember>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -206,6 +209,65 @@ public class SecurityDbContext : DbContext
                 .HasDatabaseName("IX_SessionActivity_Type_Timestamp");
         });
 
+        // Configure UserCredential entity (NIST SP 800-53 IA-5 compliant local auth)
+        modelBuilder.Entity<UserCredential>(entity =>
+        {
+            entity.ToTable("UserCredential", "dbo");
+            entity.HasKey(e => e.CredentialId);
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.Property(e => e.PasswordHash).IsRequired().HasMaxLength(128);
+            entity.Property(e => e.PasswordSalt).IsRequired().HasMaxLength(44);
+            entity.Property(e => e.HashAlgorithm).IsRequired().HasMaxLength(20);
+            entity.Property(e => e.CreatedBy).HasMaxLength(255);
+
+            // One credential per user
+            entity.HasIndex(e => e.UserId)
+                .IsUnique()
+                .HasDatabaseName("IX_UserCredential_UserId");
+        });
+
+        // Configure AccessGroup entity (application-managed groups)
+        modelBuilder.Entity<AccessGroup>(entity =>
+        {
+            entity.ToTable("AccessGroup", "dbo");
+            entity.HasKey(e => e.AccessGroupId);
+            entity.Property(e => e.GroupName).IsRequired().HasMaxLength(255);
+            entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.CreatedBy).HasMaxLength(255);
+            entity.HasIndex(e => e.GroupName).IsUnique().HasDatabaseName("UQ_AccessGroup_GroupName");
+        });
+
+        // Configure AccessGroupMember entity
+        modelBuilder.Entity<AccessGroupMember>(entity =>
+        {
+            entity.ToTable("AccessGroupMember", "dbo");
+            entity.HasKey(e => e.AccessGroupMemberId);
+
+            entity.HasOne(e => e.AccessGroup)
+                .WithMany(g => g.Members)
+                .HasForeignKey(e => e.AccessGroupId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.Property(e => e.AddedBy).HasMaxLength(255);
+
+            entity.HasIndex(e => new { e.AccessGroupId, e.UserId })
+                .IsUnique()
+                .HasDatabaseName("UQ_AccessGroupMember_Group_User");
+
+            entity.HasIndex(e => e.UserId)
+                .HasDatabaseName("IX_AccessGroupMember_UserId");
+        });
+
         // Seed initial admin role and permissions
         SeedData(modelBuilder);
     }
@@ -220,5 +282,21 @@ public class SecurityDbContext : DbContext
 
         // NOTE: RolePermission seeding removed - granular permissions are no longer used
         // Authorization is now based on project roles and page-level authorization
+    }
+}
+
+public class SecurityDbContextFactory : IDbContextFactory<SecurityDbContext>
+{
+    private readonly IServiceProvider _serviceProvider;
+
+    public SecurityDbContextFactory(IServiceProvider serviceProvider)
+    {
+        _serviceProvider = serviceProvider;
+    }
+
+    public SecurityDbContext CreateDbContext()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        return scope.ServiceProvider.GetRequiredService<SecurityDbContext>();
     }
 }

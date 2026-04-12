@@ -1,10 +1,13 @@
 @page "/sysadmin/users"
 @using DV.Shared.Security
+@using DV.Shared.Interfaces
 @using DV.Admin.UI.Services
 @using Microsoft.AspNetCore.Components.Authorization
 @inject UserService UserService
+@inject ICredentialService CredentialService
 @inject IJSRuntime JSRuntime
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@rendermode InteractiveServer
 @attribute [Authorize(Policy = "GlobalAdminOnly")]
 
 <PageTitle>User Management - Cyber Terminal</PageTitle>
@@ -136,6 +139,7 @@
                             <th>EMAIL</th>
                             <th>ACCESS LEVEL</th>
                             <th>STATUS</th>
+                            <th>CREDENTIALS</th>
                             <th>REGISTERED</th>
                             <th>ACTIONS</th>
                         </tr>
@@ -172,6 +176,27 @@
                                         <span class="badge-idle">⊗ INACTIVE</span>
                                     }
                                 </td>
+                                <td>
+                                    @{
+                                        var cred = credentialMap.GetValueOrDefault(user.UserId);
+                                    }
+                                    @if (cred == null)
+                                    {
+                                        <span style="color: #6b7280; font-size: 0.8125rem;">NO CREDENTIALS</span>
+                                    }
+                                    else if (cred.IsLockedOut)
+                                    {
+                                        <span class="badge-warning" style="background: rgba(255, 0, 64, 0.2); border-color: #ff0040; color: #ff0040;">🔒 LOCKED</span>
+                                    }
+                                    else if (cred.MustChangePassword)
+                                    {
+                                        <span style="background: rgba(255, 165, 0, 0.2); border: 1px solid rgba(255, 165, 0, 0.5); color: #ffa500; padding: 0.15rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem;">⚠ MUST CHANGE</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge-active">✓ SET</span>
+                                    }
+                                </td>
                                 <td><span class="mono" style="color: #00cc7f;">@user.CreatedDate.ToString("yyyy-MM-dd HH:mm")</span></td>
                                 <td>
                                     <div style="display: flex; gap: 0.5rem;">
@@ -185,8 +210,23 @@
                                                 <text>▶</text>
                                             }
                                         </button>
-                                        <button class="cyber-action-btn" title="View Details">⚙</button>
-                                        <button class="cyber-action-btn danger" title="Remove User">⊗</button>
+                                        @{
+                                            var credInfo = credentialMap.GetValueOrDefault(user.UserId);
+                                        }
+                                        @if (credInfo == null)
+                                        {
+                                            <button class="cyber-action-btn" title="Create Credentials" @onclick="() => OpenCreateCredentialDialog(user)">🔑</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="cyber-action-btn" title="Reset Password" @onclick="() => OpenResetPasswordDialog(user)">🔄</button>
+                                            @if (credInfo.IsLockedOut)
+                                            {
+                                                <button class="cyber-action-btn" title="Unlock Account" @onclick="() => UnlockAccount(user)">🔓</button>
+                                            }
+                                            <button class="cyber-action-btn danger" title="Remove Credentials" @onclick="() => RemoveCredentials(user)">🗑</button>
+                                        }
+                                        <button class="cyber-action-btn danger" title="Delete User" @onclick="() => DeleteUser(user)">⊗</button>
                                     </div>
                                 </td>
                             </tr>
@@ -204,20 +244,139 @@
                 <div class="alert-message">User roles and permissions are managed through the Project Role Management system. Navigate to Project Roles to assign specific access levels.</div>
             </div>
         </div>
+
+        <!-- NIST Compliance Info -->
+        <div class="cyber-alert-card success">
+            <div class="alert-icon">🛡</div>
+            <div class="alert-content">
+                <div class="alert-title">CREDENTIAL SECURITY (NIST SP 800-53)</div>
+                <div class="alert-message">Passwords: PBKDF2-SHA512 (600K iterations, 128-bit salt). Lockout: 5 failed attempts / 15 min (AC-7). Min 12 characters (SP 800-63B). Admin-reset passwords require change on first login (IA-5).</div>
+            </div>
+        </div>
     }
+}
+
+@if (!string.IsNullOrEmpty(successMessage))
+{
+    <div class="cyber-toast success" style="position: fixed; bottom: 2rem; right: 2rem; z-index: 9999; padding: 1rem 1.5rem; background: rgba(0, 204, 127, 0.15); border: 1px solid #00cc7f; border-radius: 0.5rem; color: #00cc7f; max-width: 400px; backdrop-filter: blur(10px);">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span style="font-size: 1.25rem;">✓</span>
+            <span>@successMessage</span>
+            <button style="background: none; border: none; color: #00cc7f; cursor: pointer; font-size: 1.25rem; margin-left: auto;" @onclick="() => successMessage = null">✕</button>
+        </div>
+    </div>
+}
+
+@* ============================================ *@
+@* Password Reset / Create Credential Modal     *@
+@* ============================================ *@
+@if (showPasswordDialog)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;" @onclick="ClosePasswordDialog">
+        <div style="background: #0d1117; border: 1px solid #00cc7f; border-radius: 0.75rem; padding: 2rem; width: 450px; max-width: 90vw;" @onclick:stopPropagation="true">
+            <h3 style="margin: 0 0 0.25rem 0; color: #00cc7f; font-size: 1.25rem;">
+                @(isCreatingCredential ? "🔑 CREATE CREDENTIALS" : "🔄 RESET PASSWORD")
+            </h3>
+            <p style="margin: 0 0 1.5rem 0; color: #8b949e; font-size: 0.875rem;">
+                @(isCreatingCredential ? "Set up local credentials for" : "Reset password for")
+                <strong style="color: #00cc7f;">@selectedUser?.DisplayName</strong>
+                (@selectedUser?.Username)
+            </p>
+
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; margin-bottom: 0.375rem; color: #c9d1d9; font-size: 0.875rem;">New Password</label>
+                <input type="password" class="cyber-input" style="width: 100%;" @bind="newPassword" placeholder="Minimum 12 characters..." />
+            </div>
+            <div style="margin-bottom: 1.5rem;">
+                <label style="display: block; margin-bottom: 0.375rem; color: #c9d1d9; font-size: 0.875rem;">Confirm Password</label>
+                <input type="password" class="cyber-input" style="width: 100%;" @bind="confirmPassword" placeholder="Re-enter password..." />
+            </div>
+
+            @if (!string.IsNullOrEmpty(dialogError))
+            {
+                <div style="padding: 0.75rem; background: rgba(255,0,64,0.1); border: 1px solid rgba(255,0,64,0.3); border-radius: 0.375rem; margin-bottom: 1rem; color: #ff6b6b; font-size: 0.875rem;">
+                    ⊗ @dialogError
+                </div>
+            }
+
+            <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+                <button class="cyber-btn" style="background: transparent; border: 1px solid #30363d; color: #8b949e;" @onclick="ClosePasswordDialog">CANCEL</button>
+                <button class="cyber-btn" style="background: rgba(0,204,127,0.15); border: 1px solid #00cc7f; color: #00cc7f;" @onclick="SubmitPasswordAction" disabled="@isSubmitting">
+                    @if (isSubmitting)
+                    {
+                        <text>PROCESSING...</text>
+                    }
+                    else
+                    {
+                        <text>@(isCreatingCredential ? "CREATE" : "RESET")</text>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ============================================ *@
+@* Delete Confirmation Modal                    *@
+@* ============================================ *@
+@if (showDeleteConfirm)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;" @onclick="() => showDeleteConfirm = false">
+        <div style="background: #0d1117; border: 1px solid #ff0040; border-radius: 0.75rem; padding: 2rem; width: 400px; max-width: 90vw;" @onclick:stopPropagation="true">
+            <h3 style="margin: 0 0 0.5rem 0; color: #ff0040; font-size: 1.25rem;">⊗ CONFIRM DELETION</h3>
+            <p style="margin: 0 0 1.5rem 0; color: #c9d1d9; font-size: 0.875rem;">
+                Permanently delete user <strong style="color: #ff0040;">@deleteTarget?.DisplayName</strong> (@deleteTarget?.Username)?
+                This will also remove all project role assignments and credentials.
+            </p>
+            <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+                <button class="cyber-btn" style="background: transparent; border: 1px solid #30363d; color: #8b949e;" @onclick="() => showDeleteConfirm = false">CANCEL</button>
+                <button class="cyber-btn" style="background: rgba(255,0,64,0.15); border: 1px solid #ff0040; color: #ff0040;" @onclick="ConfirmDeleteUser">DELETE</button>
+            </div>
+        </div>
+    </div>
 }
 </div>
 
 @code {
     private List<ApplicationUser> users = new();
     private List<ApplicationUser> filteredUsers = new();
+    private Dictionary<int, UserCredential?> credentialMap = new();
     private string? errorMessage;
+    private string? successMessage;
     private bool isLoading = true;
     private string searchTerm = string.Empty;
+
+    // Password dialog state
+    private bool showPasswordDialog;
+    private bool isCreatingCredential;
+    private ApplicationUser? selectedUser;
+    private string newPassword = "";
+    private string confirmPassword = "";
+    private string? dialogError;
+    private bool isSubmitting;
+
+    // Delete confirmation state
+    private bool showDeleteConfirm;
+    private ApplicationUser? deleteTarget;
+
+    // Admin context
+    private string currentAdminUsername = "System";
+
+    [CascadingParameter]
+    private Task<Microsoft.AspNetCore.Components.Authorization.AuthenticationState>? AuthenticationState { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
         await LoadUsers();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AuthenticationState != null)
+        {
+            var authState = await AuthenticationState;
+            currentAdminUsername = authState.User.Identity?.Name ?? "System";
+        }
     }
 
     private async Task LoadUsers()
@@ -227,6 +386,7 @@
             isLoading = true;
             errorMessage = null;
             users = await UserService.GetAllUsersAsync();
+            await LoadCredentialInfo();
             ApplySearch();
         }
         catch (Exception ex)
@@ -236,6 +396,16 @@
         finally
         {
             isLoading = false;
+        }
+    }
+
+    private async Task LoadCredentialInfo()
+    {
+        credentialMap.Clear();
+        foreach (var user in users)
+        {
+            var credential = await CredentialService.GetCredentialInfoAsync(user.UserId);
+            credentialMap[user.UserId] = credential;
         }
     }
 
@@ -286,6 +456,154 @@
         catch (Exception ex)
         {
             errorMessage = $"Error updating user status: {ex.Message}";
+        }
+    }
+
+    // --- Credential dialogs ---
+
+    private void OpenCreateCredentialDialog(ApplicationUser user)
+    {
+        selectedUser = user;
+        isCreatingCredential = true;
+        showPasswordDialog = true;
+        newPassword = "";
+        confirmPassword = "";
+        dialogError = null;
+        successMessage = null;
+    }
+
+    private void OpenResetPasswordDialog(ApplicationUser user)
+    {
+        selectedUser = user;
+        isCreatingCredential = false;
+        showPasswordDialog = true;
+        newPassword = "";
+        confirmPassword = "";
+        dialogError = null;
+        successMessage = null;
+    }
+
+    private void ClosePasswordDialog()
+    {
+        showPasswordDialog = false;
+        dialogError = null;
+        newPassword = "";
+        confirmPassword = "";
+    }
+
+    private async Task SubmitPasswordAction()
+    {
+        dialogError = null;
+
+        if (selectedUser == null) return;
+
+        if (string.IsNullOrWhiteSpace(newPassword))
+        {
+            dialogError = "Password is required.";
+            return;
+        }
+
+        if (newPassword != confirmPassword)
+        {
+            dialogError = "Passwords do not match.";
+            return;
+        }
+
+        isSubmitting = true;
+        try
+        {
+            string? error;
+            if (isCreatingCredential)
+            {
+                error = await CredentialService.CreateCredentialAsync(selectedUser.UserId, newPassword, currentAdminUsername);
+                if (error == null)
+                    successMessage = $"Credentials created for {selectedUser.Username}. They must change their password on first login.";
+            }
+            else
+            {
+                error = await CredentialService.AdminResetPasswordAsync(selectedUser.UserId, newPassword, currentAdminUsername);
+                if (error == null)
+                    successMessage = $"Password reset for {selectedUser.Username}. They must change it on next login.";
+            }
+
+            if (error != null)
+            {
+                dialogError = error;
+                return;
+            }
+
+            ClosePasswordDialog();
+            await LoadUsers();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            dialogError = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isSubmitting = false;
+        }
+    }
+
+    // --- Unlock / Remove credentials ---
+
+    private async Task UnlockAccount(ApplicationUser user)
+    {
+        try
+        {
+            await CredentialService.UnlockAccountAsync(user.UserId);
+            successMessage = $"Account unlocked for {user.Username}.";
+            await LoadUsers();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to unlock account: {ex.Message}";
+        }
+    }
+
+    private async Task RemoveCredentials(ApplicationUser user)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Remove local credentials for {user.Username}? They will only be able to sign in via SSO.");
+        if (!confirmed) return;
+
+        try
+        {
+            await CredentialService.RemoveCredentialAsync(user.UserId);
+            successMessage = $"Local credentials removed for {user.Username}.";
+            await LoadUsers();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to remove credentials: {ex.Message}";
+        }
+    }
+
+    // --- Delete user ---
+
+    private void DeleteUser(ApplicationUser user)
+    {
+        deleteTarget = user;
+        showDeleteConfirm = true;
+    }
+
+    private async Task ConfirmDeleteUser()
+    {
+        if (deleteTarget == null) return;
+        showDeleteConfirm = false;
+
+        try
+        {
+            await UserService.DeleteUserAsync(deleteTarget.UserId);
+            successMessage = $"User {deleteTarget.Username} deleted.";
+            await LoadUsers();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to delete user: {ex.Message}";
         }
     }
 }

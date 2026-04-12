@@ -1,0 +1,40 @@
+@inject IJSRuntime JS
+
+<button class="theme-toggle-btn" @onclick="ToggleTheme" title="@tooltip">
+    <i class="bi @icon"></i>
+</button>
+
+@code {
+    private string icon = "bi-sun-fill";
+    private string tooltip = "Switch to light mode";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            var theme = await JS.InvokeAsync<string>("themeToggle.get");
+            UpdateIcon(theme);
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleTheme()
+    {
+        var newTheme = await JS.InvokeAsync<string>("themeToggle.toggle");
+        UpdateIcon(newTheme);
+    }
+
+    private void UpdateIcon(string theme)
+    {
+        if (theme == "light")
+        {
+            icon = "bi-moon-stars-fill";
+            tooltip = "Switch to dark mode";
+        }
+        else
+        {
+            icon = "bi-sun-fill";
+            tooltip = "Switch to light mode";
+        }
+    }
+}

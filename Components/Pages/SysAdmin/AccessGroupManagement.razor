@@ -1,0 +1,496 @@
+@page "/sysadmin/access-groups"
+@using DV.Shared.Security
+@using DV.Shared.Interfaces
+@using DV.Admin.UI.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IAccessGroupService GroupService
+@inject UserService UserService
+@inject IJSRuntime JSRuntime
+
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+
+@rendermode InteractiveServer
+
+<PageTitle>Access Groups - DocViewer Admin</PageTitle>
+
+<div class="lgreeny-dashboard">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+            <h2 style="margin: 0; color: #1e293b; font-size: 1.75rem; font-weight: 600;">👥 Access Groups</h2>
+            <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.875rem;">Manage application-managed access groups for project access control</p>
+        </div>
+        <button class="lgreeny-btn-primary" style="width: auto;" @onclick="OpenCreateDialog">
+            ➕ Create Group
+        </button>
+    </div>
+
+    @* ── Success toast ── *@
+    @if (!string.IsNullOrEmpty(successMessage))
+    {
+        <div style="position: fixed; top: 1rem; right: 1rem; z-index: 9999; padding: 0.75rem 1.25rem; background: #065f46; color: white; border-radius: 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.3); font-size: 0.875rem; max-width: 400px;">
+            ✅ @successMessage
+        </div>
+    }
+
+    @* ── Groups list ── *@
+    <div class="lgreeny-panel">
+        <div class="panel-header">
+            <h3 class="panel-title">📋 Groups (@(groups?.Count ?? 0))</h3>
+        </div>
+        <div class="panel-body">
+            @if (isLoading)
+            {
+                <div style="text-align: center; padding: 2rem;">
+                    <div style="color: #3b82f6; font-size: 1.5rem;">⏳</div>
+                    <p style="color: #64748b; margin-top: 0.5rem;">Loading groups...</p>
+                </div>
+            }
+            else if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.5rem; color: #991b1b;">
+                    ⚠️ @errorMessage
+                    <button class="lgreeny-btn-secondary" style="margin-left: 1rem; padding: 0.25rem 0.5rem; font-size: 0.8rem;" @onclick="LoadGroups">🔄 Retry</button>
+                </div>
+            }
+            else if (groups == null || groups.Count == 0)
+            {
+                <div style="padding: 1rem; background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 0.5rem; color: #1e40af;">
+                    ℹ️ No access groups created yet. Click "Create Group" to get started.
+                </div>
+            }
+            else
+            {
+                <table class="lgreeny-table">
+                    <thead>
+                        <tr>
+                            <th>Group Name</th>
+                            <th>Description</th>
+                            <th>Members</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th style="text-align: right;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var group in groups)
+                        {
+                            <tr>
+                                <td>
+                                    <strong style="color: #1e293b;">@group.GroupName</strong>
+                                </td>
+                                <td>
+                                    <span style="color: #64748b; font-size: 0.85rem;">@(group.Description ?? "—")</span>
+                                </td>
+                                <td>
+                                    <span style="padding: 0.2rem 0.6rem; background: #dbeafe; color: #1e40af; border-radius: 0.375rem; font-size: 0.8rem; font-weight: 500;">
+                                        @group.Members.Count member@(group.Members.Count != 1 ? "s" : "")
+                                    </span>
+                                </td>
+                                <td>
+                                    @if (group.IsActive)
+                                    {
+                                        <span style="padding: 0.2rem 0.6rem; background: #d1fae5; color: #065f46; border-radius: 0.375rem; font-size: 0.8rem; font-weight: 500;">Active</span>
+                                    }
+                                    else
+                                    {
+                                        <span style="padding: 0.2rem 0.6rem; background: #f1f5f9; color: #475569; border-radius: 0.375rem; font-size: 0.8rem; font-weight: 500;">Inactive</span>
+                                    }
+                                </td>
+                                <td>
+                                    <small style="color: #64748b;">@group.CreatedDate.ToString("yyyy-MM-dd")</small>
+                                </td>
+                                <td style="text-align: right;">
+                                    <div style="display: flex; gap: 0.4rem; justify-content: flex-end; flex-wrap: wrap;">
+                                        <button style="padding: 0.3rem 0.6rem; background: #ede9fe; color: #5b21b6; border: 1px solid #ddd6fe; border-radius: 0.375rem; font-size: 0.8rem; cursor: pointer; font-weight: 500;"
+                                                @onclick="() => OpenMembersDialog(group)" title="Manage Members">
+                                            👥 Members
+                                        </button>
+                                        <button style="padding: 0.3rem 0.6rem; background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; border-radius: 0.375rem; font-size: 0.8rem; cursor: pointer; font-weight: 500;"
+                                                @onclick="() => OpenEditDialog(group)" title="Edit Group">
+                                            ✏️ Edit
+                                        </button>
+                                        @if (group.IsActive)
+                                        {
+                                            <button style="padding: 0.3rem 0.6rem; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 0.375rem; font-size: 0.8rem; cursor: pointer; font-weight: 500;"
+                                                    @onclick="() => ToggleActive(group)" title="Deactivate">
+                                                ⏸ Deactivate
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button style="padding: 0.3rem 0.6rem; background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; border-radius: 0.375rem; font-size: 0.8rem; cursor: pointer; font-weight: 500;"
+                                                    @onclick="() => ToggleActive(group)" title="Activate">
+                                                ▶ Activate
+                                            </button>
+                                        }
+                                        <button style="padding: 0.3rem 0.6rem; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 0.375rem; font-size: 0.8rem; cursor: pointer; font-weight: 500;"
+                                                @onclick="() => DeleteGroup(group)" title="Delete Group">
+                                            🗑️ Delete
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+</div>
+
+@* ── Create / Edit Group Dialog ── *@
+@if (showGroupDialog)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+        <div style="background: white; border-radius: 0.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); max-width: 500px; width: 100%; margin: 1rem;">
+            <div style="padding: 1.25rem 1.5rem; border-bottom: 1px solid #e2e8f0;">
+                <h3 style="margin: 0; color: #1e293b; font-size: 1.25rem; font-weight: 600;">
+                    @(editGroupId == 0 ? "➕ Create" : "✏️ Edit") Access Group
+                </h3>
+            </div>
+            <div style="padding: 1.5rem;">
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Group Name</label>
+                    <input type="text"
+                           style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;"
+                           placeholder="e.g. BankProject_Read"
+                           @bind="editGroupName" />
+                    <div style="color: #64748b; font-size: 0.75rem; margin-top: 0.25rem;">
+                        Use this name in a project's Read or Edit Principal field to grant access.
+                    </div>
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Description</label>
+                    <textarea style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem; font-family: inherit;"
+                              @bind="editGroupDescription"
+                              rows="2"
+                              placeholder="Optional description of this group's purpose"></textarea>
+                </div>
+            </div>
+            <div style="padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; display: flex; gap: 0.75rem; justify-content: flex-end;">
+                <button class="lgreeny-btn-secondary" @onclick="CloseGroupDialog">Cancel</button>
+                <button class="lgreeny-btn-primary" @onclick="SaveGroup">💾 Save</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Members Dialog ── *@
+@if (showMembersDialog && selectedGroup != null)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+        <div style="background: white; border-radius: 0.5rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); max-width: 700px; width: 100%; margin: 1rem; max-height: 80vh; display: flex; flex-direction: column;">
+            <div style="padding: 1.25rem 1.5rem; border-bottom: 1px solid #e2e8f0;">
+                <h3 style="margin: 0; color: #1e293b; font-size: 1.25rem; font-weight: 600;">
+                    👥 Members of "@selectedGroup.GroupName"
+                </h3>
+            </div>
+            <div style="padding: 1.5rem; overflow-y: auto; flex: 1;">
+
+                @* Add member section *@
+                <div style="margin-bottom: 1.5rem; padding: 1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Add User to Group</label>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <select style="flex: 1; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;"
+                                @bind="selectedUserIdToAdd">
+                            <option value="0">-- Select User --</option>
+                            @if (availableUsers != null)
+                            {
+                                @foreach (var user in availableUsers)
+                                {
+                                    <option value="@user.UserId">@user.DisplayName (@user.Username)</option>
+                                }
+                            }
+                        </select>
+                        <button style="padding: 0.5rem 1rem; background: #065f46; color: white; border: none; border-radius: 0.375rem; font-size: 0.875rem; cursor: pointer; font-weight: 500; white-space: nowrap;"
+                                @onclick="AddMember" disabled="@(selectedUserIdToAdd == 0)">
+                            ➕ Add
+                        </button>
+                    </div>
+                </div>
+
+                @* Current members *@
+                @if (groupMembers == null || groupMembers.Count == 0)
+                {
+                    <div style="padding: 1rem; background: #dbeafe; border: 1px solid #bfdbfe; border-radius: 0.5rem; color: #1e40af; font-size: 0.875rem;">
+                        No members in this group yet. Add users above.
+                    </div>
+                }
+                else
+                {
+                    <table class="lgreeny-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Username</th>
+                                <th>Added</th>
+                                <th>Added By</th>
+                                <th style="text-align: right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var member in groupMembers)
+                            {
+                                <tr>
+                                    <td><strong style="color: #1e293b;">@(member.User?.DisplayName ?? "—")</strong></td>
+                                    <td><span style="color: #64748b; font-size: 0.85rem;">@(member.User?.Username ?? "—")</span></td>
+                                    <td><small style="color: #64748b;">@member.AddedDate.ToString("yyyy-MM-dd")</small></td>
+                                    <td><small style="color: #64748b;">@(member.AddedBy ?? "—")</small></td>
+                                    <td style="text-align: right;">
+                                        <button style="padding: 0.25rem 0.5rem; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 0.375rem; font-size: 0.8rem; cursor: pointer;"
+                                                @onclick="() => RemoveMember(member)">
+                                            ✕ Remove
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+            <div style="padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end;">
+                <button class="lgreeny-btn-secondary" @onclick="CloseMembersDialog">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private List<AccessGroup>? groups;
+    private bool isLoading = true;
+    private string? errorMessage;
+    private string? successMessage;
+
+    // Group dialog state
+    private bool showGroupDialog;
+    private int editGroupId;
+    private string editGroupName = string.Empty;
+    private string? editGroupDescription;
+
+    // Members dialog state
+    private bool showMembersDialog;
+    private AccessGroup? selectedGroup;
+    private List<AccessGroupMember>? groupMembers;
+    private List<ApplicationUser>? allUsers;
+    private List<ApplicationUser>? availableUsers;
+    private int selectedUserIdToAdd;
+    private string currentAdminUsername = "admin";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask != null)
+        {
+            var authState = await AuthStateTask;
+            currentAdminUsername = authState.User.Identity?.Name ?? "admin";
+        }
+        await LoadGroups();
+    }
+
+    private async Task LoadGroups()
+    {
+        isLoading = true;
+        errorMessage = null;
+        try
+        {
+            groups = await GroupService.GetAllGroupsAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    // ── Group CRUD ──
+
+    private void OpenCreateDialog()
+    {
+        editGroupId = 0;
+        editGroupName = string.Empty;
+        editGroupDescription = null;
+        showGroupDialog = true;
+    }
+
+    private void OpenEditDialog(AccessGroup group)
+    {
+        editGroupId = group.AccessGroupId;
+        editGroupName = group.GroupName;
+        editGroupDescription = group.Description;
+        showGroupDialog = true;
+    }
+
+    private void CloseGroupDialog()
+    {
+        showGroupDialog = false;
+    }
+
+    private async Task SaveGroup()
+    {
+        if (string.IsNullOrWhiteSpace(editGroupName))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Group name is required.");
+            return;
+        }
+
+        try
+        {
+            if (editGroupId == 0)
+            {
+                await GroupService.CreateGroupAsync(editGroupName.Trim(), editGroupDescription?.Trim(), currentAdminUsername);
+                ShowSuccess($"Group '{editGroupName}' created.");
+            }
+            else
+            {
+                await GroupService.UpdateGroupAsync(editGroupId, editGroupName.Trim(), editGroupDescription?.Trim());
+                ShowSuccess($"Group '{editGroupName}' updated.");
+            }
+
+            CloseGroupDialog();
+            await LoadGroups();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteGroup(AccessGroup group)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm",
+            $"Delete group '{group.GroupName}'? All members will be removed and projects referencing this group will lose access.");
+        if (!confirmed) return;
+
+        try
+        {
+            await GroupService.DeleteGroupAsync(group.AccessGroupId);
+            ShowSuccess($"Group '{group.GroupName}' deleted.");
+            await LoadGroups();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+        }
+    }
+
+    private async Task ToggleActive(AccessGroup group)
+    {
+        try
+        {
+            await GroupService.SetGroupActiveAsync(group.AccessGroupId, !group.IsActive);
+            ShowSuccess($"Group '{group.GroupName}' {(group.IsActive ? "deactivated" : "activated")}.");
+            await LoadGroups();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+        }
+    }
+
+    // ── Members management ──
+
+    private async Task OpenMembersDialog(AccessGroup group)
+    {
+        selectedGroup = group;
+        selectedUserIdToAdd = 0;
+
+        try
+        {
+            // Load full group with members
+            var fullGroup = await GroupService.GetGroupByIdAsync(group.AccessGroupId);
+            groupMembers = fullGroup?.Members?.ToList() ?? new List<AccessGroupMember>();
+
+            // Load all active users for the add dropdown
+            if (allUsers == null)
+            {
+                allUsers = (await UserService.GetAllUsersAsync())
+                    .Where(u => u.IsActive)
+                    .OrderBy(u => u.DisplayName)
+                    .ToList();
+            }
+
+            // Filter out users already in the group
+            RefreshAvailableUsers();
+            showMembersDialog = true;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error loading members: {ex.Message}");
+        }
+    }
+
+    private void RefreshAvailableUsers()
+    {
+        var memberUserIds = groupMembers?.Select(m => m.UserId).ToHashSet() ?? new HashSet<int>();
+        availableUsers = allUsers?.Where(u => !memberUserIds.Contains(u.UserId)).ToList();
+    }
+
+    private void CloseMembersDialog()
+    {
+        showMembersDialog = false;
+        selectedGroup = null;
+        groupMembers = null;
+    }
+
+    private async Task AddMember()
+    {
+        if (selectedUserIdToAdd == 0 || selectedGroup == null) return;
+
+        try
+        {
+            await GroupService.AddMemberAsync(selectedGroup.AccessGroupId, selectedUserIdToAdd, currentAdminUsername);
+
+            // Refresh members list
+            var fullGroup = await GroupService.GetGroupByIdAsync(selectedGroup.AccessGroupId);
+            groupMembers = fullGroup?.Members?.ToList() ?? new List<AccessGroupMember>();
+            selectedUserIdToAdd = 0;
+            RefreshAvailableUsers();
+            ShowSuccess("Member added.");
+            await LoadGroups(); // refresh member counts
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+        }
+    }
+
+    private async Task RemoveMember(AccessGroupMember member)
+    {
+        if (selectedGroup == null) return;
+
+        try
+        {
+            await GroupService.RemoveMemberAsync(selectedGroup.AccessGroupId, member.UserId);
+
+            groupMembers?.Remove(member);
+            RefreshAvailableUsers();
+            ShowSuccess("Member removed.");
+            await LoadGroups(); // refresh member counts
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+        }
+    }
+
+    // ── Helpers ──
+
+    private void ShowSuccess(string message)
+    {
+        successMessage = message;
+        _ = ClearSuccessAfterDelay();
+    }
+
+    private async Task ClearSuccessAfterDelay()
+    {
+        await Task.Delay(4000);
+        successMessage = null;
+        await InvokeAsync(StateHasChanged);
+    }
+}

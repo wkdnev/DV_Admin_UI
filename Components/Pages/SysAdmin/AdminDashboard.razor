@@ -2,13 +2,16 @@
 @page "/admin-dashboard"
 @attribute [Authorize(Policy = "AdminPolicy")]
 @using DV.Shared.Security
+@using DV.Shared.Interfaces
 @using DV.Admin.UI.Services
 @inject UserService UserService
 @* REMOVED: @inject PermissionService PermissionService - permissions system removed *@
 @inject ProjectRoleService ProjectRoleService
+@inject IAccessGroupService AccessGroupService
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
 @inject Microsoft.Extensions.Hosting.IHostEnvironment HostEnvironment
+
 @rendermode InteractiveServer
 
 <PageTitle>Admin Dashboard - DocViewer Proto</PageTitle>
@@ -80,10 +83,10 @@
         <div class="lgreeny-stat-card" style="padding: 0.75rem;">
             <div class="stat-header" style="margin-bottom: 0.5rem;">
                 <span class="stat-title" style="font-size: 0.7rem;">System Status</span>
-                <span class="stat-icon" style="width: 1.5rem; height: 1.5rem; background: @(systemStatus == "Online" ? "#d1fae5" : "#fef3c7"); color: @(systemStatus == "Online" ? "#065f46" : "#92400e");">
+                <span class="stat-icon" style="width: 1.5rem; height: 1.5rem; background: @(systemStatus == "Online" ? "#ede9fe" : "#fef3c7"); color: @(systemStatus == "Online" ? "#5b21b6" : "#92400e");">
                     @if (systemStatus == "Online")
                     {
-                        <Icon Name="check" Size="12" Color="#065f46" />
+                        <Icon Name="check" Size="12" Color="#5b21b6" />
                     }
                     else
                     {
@@ -117,7 +120,7 @@
                     <Icon Name="users" Size="20" />
                     <span>User & Access Management</span>
                 </h3>
-                <p style="margin: 0.25rem 0 0 0; font-size: 0.875rem; color: #94a3b8;">Manage users, roles, and access permissions</p>
+                <p style="margin: 0; font-size: 0.75rem; color: rgba(255,255,255,0.7);">Manage users, roles, and access permissions</p>
             </div>
         </div>
         <div class="panel-body">
@@ -153,8 +156,8 @@
                      onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
                      onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
                     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem;">
-                        <Icon Name="key" Size="32" Color="#14b8a6" />
-                        <span style="background: #ccfbf1; color: #115e59; padding: 0.25rem 0.625rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">@projectRolesCount Roles</span>
+                        <Icon Name="key" Size="32" Color="#8b5cf6" />
+                        <span style="background: #ede9fe; color: #6b21a8; padding: 0.25rem 0.625rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">@projectRolesCount Roles</span>
                     </div>
                     <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">Project Roles</h4>
                     <p style="margin: 0; font-size: 0.875rem; color: #64748b;">Project-specific role assignments</p>
@@ -171,6 +174,22 @@
                     <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">User Project Access</h4>
                     <p style="margin: 0; font-size: 0.875rem; color: #64748b;">Control project access authorization</p>
                 </div>
+
+                <AuthorizeView Policy="GlobalAdminPolicy">
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 1.25rem; cursor: pointer; transition: all 0.2s;" 
+                     @onclick="@(() => Navigation.NavigateTo("/sysadmin/access-groups"))"
+                     onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
+                     onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.75rem;">
+                        <Icon Name="users" Size="32" Color="#065f46" />
+                        <span style="background: #d1fae5; color: #065f46; padding: 0.25rem 0.625rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600;">@accessGroupCount Groups</span>
+                    </div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">Access Groups</h4>
+                    <p style="margin: 0; font-size: 0.875rem; color: #64748b;">App-managed groups for non-AD project access</p>
+                </div>
+                </AuthorizeView>
+
+
             </div>
         </div>
     </div>
@@ -183,7 +202,7 @@
                     <Icon Name="settings" Size="20" />
                     <span>System Configuration</span>
                 </h3>
-                <p style="margin: 0.25rem 0 0 0; font-size: 0.875rem; color: #94a3b8;">Configure projects and permissions</p>
+                <p style="margin: 0; font-size: 0.75rem; color: rgba(255,255,255,0.7);">Configure projects and permissions</p>
             </div>
         </div>
         <div class="panel-body">
@@ -212,7 +231,7 @@
                     <Icon Name="database" Size="20" />
                     <span>Data Management</span>
                 </h3>
-                <p style="margin: 0.25rem 0 0 0; font-size: 0.875rem; color: #94a3b8;">Import, export, and manage data</p>
+                <p style="margin: 0; font-size: 0.75rem; color: rgba(255,255,255,0.7);">Import, export, and manage data</p>
             </div>
         </div>
         <div class="panel-body">
@@ -244,10 +263,21 @@
                      onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
                      onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
                     <div style="margin-bottom: 0.75rem;">
-                        <Icon Name="clipboard" Size="32" Color="#14b8a6" />
+                        <Icon Name="clipboard" Size="32" Color="#8b5cf6" />
                     </div>
                     <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">Reports</h4>
                     <p style="margin: 0; font-size: 0.875rem; color: #64748b;">Generate audit and activity reports</p>
+                </div>
+
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 0.5rem; padding: 1.25rem; cursor: pointer; transition: all 0.2s;" 
+                     @onclick="@(() => Navigation.NavigateTo("/sysadmin/document-management"))"
+                     onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
+                     onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
+                    <div style="margin-bottom: 0.75rem;">
+                        <Icon Name="file-text" Size="32" Color="#f59e0b" />
+                    </div>
+                    <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">Document Management</h4>
+                    <p style="margin: 0; font-size: 0.875rem; color: #64748b;">CRUD operations, metadata editing, and page management</p>
                 </div>
             </div>
         </div>
@@ -261,7 +291,7 @@
                     <Icon Name="eye" Size="20" />
                     <span>Monitoring & Audit</span>
                 </h3>
-                <p style="margin: 0.25rem 0 0 0; font-size: 0.875rem; color: #94a3b8;">Track activities and ensure security</p>
+                <p style="margin: 0; font-size: 0.75rem; color: rgba(255,255,255,0.7);">Track activities and ensure security</p>
             </div>
         </div>
         <div class="panel-body">
@@ -293,7 +323,7 @@
                      onmouseenter="this.style.borderColor='#3b82f6'; this.style.boxShadow='0 4px 6px -1px rgba(59, 130, 246, 0.1)'"
                      onmouseleave="this.style.borderColor='#e2e8f0'; this.style.boxShadow='none'">
                     <div style="margin-bottom: 0.75rem;">
-                        <Icon Name="shield" Size="32" Color="#14b8a6" />
+                        <Icon Name="shield" Size="32" Color="#8b5cf6" />
                     </div>
                     <h4 style="margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 600; color: #1e293b;">Security Audit</h4>
                     <p style="margin: 0; font-size: 0.875rem; color: #64748b;">Scan for security vulnerabilities</p>
@@ -309,6 +339,8 @@
     private int adminUsersCount;
     private int totalAccessRecords;
     private int projectCount;
+    private int accessGroupCount;
+
     
     private string systemStatus = "Online";
     private string systemStatusDetail = "All Services Running";
@@ -330,20 +362,15 @@
                                HostEnvironment.IsProduction() ? "Production Mode" : 
                                HostEnvironment.IsStaging() ? "Staging Mode" : "Unknown";
             
-            var users = await UserService.GetAllUsersAsync();
-            usersCount = users?.Count ?? 0;
-
-            // Load project role statistics
-            await LoadProjectRoleStatistics();
+            // Run user-data and project-data queries in parallel
+            // (different Transient services = independent DbContext instances = thread-safe)
+            var userDataTask = LoadUserData();
+            var projectDataTask = LoadProjectData();
+            var accessGroupTask = LoadAccessGroupData();
             
-            // Load admin user statistics
-            await LoadAdminUserStatistics();
+            await Task.WhenAll(userDataTask, projectDataTask, accessGroupTask);
             
-            // Load user project access statistics
-            await LoadUserProjectAccessStatistics();
-
-            // Load project count
-            await LoadProjectCount();
+            totalAccessRecords = 0; // Feature removed
             
             // Update system status based on successful data load
             systemStatus = "Online";
@@ -352,7 +379,7 @@
         catch (Exception ex)
         {
             // keep page usable even if counts fail
-            usersCount = projectRolesCount = adminUsersCount = totalAccessRecords = projectCount = 0;
+            usersCount = projectRolesCount = adminUsersCount = totalAccessRecords = projectCount = accessGroupCount = 0;
             systemStatus = "Warning";
             systemStatusDetail = "Some Services Unavailable";
             
@@ -365,6 +392,37 @@
             StateHasChanged();
         }
     }
+    
+    private async Task LoadUserData()
+    {
+        var users = await UserService.GetAllUsersAsync();
+        usersCount = users?.Count ?? 0;
+        
+
+        
+        await LoadAdminUserStatistics();
+    }
+    
+    private async Task LoadProjectData()
+    {
+        // Single call for both project count and role statistics
+        var allProjects = await ProjectRoleService.GetAllProjectsAsync();
+        projectCount = allProjects.Count;
+        
+        var totalProjectRoles = 0;
+        foreach (var project in allProjects)
+        {
+            var projectRoles = await ProjectRoleService.GetProjectRolesAsync(project.ProjectId);
+            totalProjectRoles += projectRoles.Count;
+        }
+        projectRolesCount = totalProjectRoles;
+    }
+
+    private async Task LoadAccessGroupData()
+    {
+        var groups = await AccessGroupService.GetAllGroupsAsync();
+        accessGroupCount = groups.Count;
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -375,32 +433,6 @@
             {
                 await JSRuntime.InvokeVoidAsync("console.error", initializationError);
             }
-        }
-    }
-
-    private async Task LoadProjectRoleStatistics()
-    {
-        try
-        {
-            // Get all project roles across all projects
-            var allProjects = await ProjectRoleService.GetAllProjectsAsync();
-            var totalProjectRoles = 0;
-
-            foreach (var project in allProjects)
-            {
-                var projectRoles = await ProjectRoleService.GetProjectRolesAsync(project.ProjectId);
-                totalProjectRoles += projectRoles.Count;
-            }
-
-            projectRolesCount = totalProjectRoles;
-        }
-        catch (Exception ex)
-        {
-            projectRolesCount = 0;
-            
-            // Store error instead of immediate JavaScript logging
-            if (string.IsNullOrEmpty(initializationError))
-                initializationError = $"Error loading project role statistics: {ex.Message}";
         }
     }
 
@@ -422,29 +454,6 @@
         }
     }
 
-    private async Task LoadUserProjectAccessStatistics()
-    {
-        // Feature removed.
-        totalAccessRecords = 0;
-        await Task.CompletedTask;
-    }
-
-    private async Task LoadProjectCount()
-    {
-        try
-        {
-            var allProjects = await ProjectRoleService.GetAllProjectsAsync();
-            projectCount = allProjects.Count;
-        }
-        catch (Exception ex)
-        {
-            projectCount = 0;
-            
-            // Store error instead of immediate JavaScript logging
-            if (string.IsNullOrEmpty(initializationError))
-                initializationError = $"Error loading project count: {ex.Message}";
-        }
-    }
 }
 
 

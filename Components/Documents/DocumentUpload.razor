@@ -347,23 +347,28 @@
                 ProjectName = selectedProject.ProjectName
             });
 
-            successMessage = $"Successfully uploaded {selectedFile!.Name} for Document {uploadedPage.DocumentId}, Page {pageNumber} in project '{selectedProject.ProjectName}'";
+            var alertMessage = $"Successfully uploaded {selectedFile!.Name} for Document {uploadedPage.DocumentId}, Page {pageNumber} in project '{selectedProject.ProjectName}'";
+            successMessage = alertMessage;
             
             // Clear form
             ClearForm();
+
+            // Restore success message after clear (so it displays in UI too)
+            successMessage = alertMessage;
 
             // Notify parent component
             if (OnUploadCompleted.HasDelegate)
                 await OnUploadCompleted.InvokeAsync(uploadedPage);
 
-            await JSRuntime.InvokeVoidAsync("alert", successMessage);
+            // Stop spinner before showing alert (alert blocks the render cycle)
+            isUploading = false;
+            StateHasChanged();
+
+            await JSRuntime.InvokeVoidAsync("alert", alertMessage);
         }
         catch (Exception ex)
         {
             errorMessage = $"Upload failed: {ex.Message}";
-        }
-        finally
-        {
             isUploading = false;
         }
     }

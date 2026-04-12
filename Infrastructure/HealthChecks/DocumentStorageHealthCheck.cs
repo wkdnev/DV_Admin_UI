@@ -123,7 +123,7 @@ public class DocumentStorageHealthCheck : IHealthCheck
                 try
                 {
                     // Check if schema exists and get document count
-                    var documentCountSql = $"SELECT COUNT(*) FROM [{schema}].[Document]";
+                    var documentCountSql = $"SELECT COUNT(*) FROM \"{schema}\".\"Document\"";
                     var documentCount = await _context.Database
                         .SqlQueryRaw<int>(documentCountSql)
                         .FirstOrDefaultAsync(cancellationToken);
@@ -132,7 +132,7 @@ public class DocumentStorageHealthCheck : IHealthCheck
                     totalDocuments += documentCount;
 
                     // Get page count
-                    var pageCountSql = $"SELECT COUNT(*) FROM [{schema}].[DocumentPage]";
+                    var pageCountSql = $"SELECT COUNT(*) FROM \"{schema}\".\"DocumentPage\"";
                     var pageCount = await _context.Database
                         .SqlQueryRaw<int>(pageCountSql)
                         .FirstOrDefaultAsync(cancellationToken);
@@ -193,7 +193,7 @@ public class DocumentStorageHealthCheck : IHealthCheck
                 try
                 {
                     // Count pages with BLOB content in this schema
-                    var schemaBlobCountSql = $"SELECT COUNT(*) FROM [{schema}].[DocumentPage] WHERE FileContent IS NOT NULL";
+                    var schemaBlobCountSql = $"SELECT COUNT(*) FROM \"{schema}\".\"DocumentPage\" WHERE \"FileContent\" IS NOT NULL";
                     var schemaBlobCount = await _context.Database
                         .SqlQueryRaw<int>(schemaBlobCountSql)
                         .FirstOrDefaultAsync(cancellationToken);
@@ -201,7 +201,7 @@ public class DocumentStorageHealthCheck : IHealthCheck
                     blobCount += schemaBlobCount;
 
                     // Get sample BLOB info
-                    var sampleBlobSql = $"SELECT TOP 1 PageId, FileName, DATALENGTH(FileContent) as ContentSize, ContentType FROM [{schema}].[DocumentPage] WHERE FileContent IS NOT NULL";
+                    var sampleBlobSql = $"SELECT \"PageId\", \"FileName\", OCTET_LENGTH(\"FileContent\") as \"ContentSize\", \"ContentType\" FROM \"{schema}\".\"DocumentPage\" WHERE \"FileContent\" IS NOT NULL LIMIT 1";
                     var sampleResult = await _context.Database
                         .SqlQueryRaw<dynamic>(sampleBlobSql)
                         .FirstOrDefaultAsync(cancellationToken);
@@ -262,14 +262,14 @@ public class DocumentStorageHealthCheck : IHealthCheck
             {
                 try
                 {
-                    var pageCountSql = $"SELECT COUNT(*) FROM [{schema}].[DocumentPage]";
+                    var pageCountSql = $"SELECT COUNT(*) FROM \"{schema}\".\"DocumentPage\"";
                     var pageCount = await _context.Database
                         .SqlQueryRaw<int>(pageCountSql)
                         .FirstOrDefaultAsync(cancellationToken);
                     
                     totalPages += pageCount;
 
-                    var sizeSql = $"SELECT ISNULL(SUM(DATALENGTH(FileContent)), 0) FROM [{schema}].[DocumentPage] WHERE FileContent IS NOT NULL";
+                    var sizeSql = $"SELECT COALESCE(SUM(OCTET_LENGTH(\"FileContent\")), 0) FROM \"{schema}\".\"DocumentPage\" WHERE \"FileContent\" IS NOT NULL";
                     var schemaSize = await _context.Database
                         .SqlQueryRaw<long>(sizeSql)
                         .FirstOrDefaultAsync(cancellationToken);

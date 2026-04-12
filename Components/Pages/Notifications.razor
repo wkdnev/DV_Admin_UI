@@ -1,0 +1,416 @@
+@* ============================================================================
+   Notifications.razor - Personal Notifications Page (Admin UI)
+   ============================================================================
+   NIST SP 800-53 Rev 5: SI-5 (Security Alerts dissemination)
+   
+   Features:
+   - Paginated notification list with filtering and sorting
+   - Category filter (All, Bad File Report, Batch Import, etc.)
+   - Read/Unread filter with visual distinction
+   - Important flag with priority indicator
+   - Bulk select & delete, mark all read
+   - Relative timestamps with full UTC tooltip
+   - Responsive layout with card-based design
+   ============================================================================ *@
+
+@page "/notifications"
+@rendermode InteractiveServer
+
+@using DV.Admin.UI.Services
+@using DV.Shared.DTOs
+@using DV.Shared.Security
+@inject NotificationApiService NotificationService
+
+<div class="dashboard-container">
+    <!-- Page Header -->
+    <div class="page-header">
+        <div class="header-icon">
+            <i class="bi bi-bell"></i>
+        </div>
+        <div class="header-content">
+            <h1>Notifications</h1>
+            <p class="text-muted mb-0">
+                @if (_response != null && _response.UnreadCount > 0)
+                {
+                    <span class="badge bg-primary me-2">@_response.UnreadCount unread</span>
+                }
+                @if (_response != null)
+                {
+                    <span>@_response.TotalCount total notifications</span>
+                }
+            </p>
+        </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <!-- Category Filter -->
+                <div class="input-group input-group-sm" style="max-width: 200px;">
+                    <label class="input-group-text" for="categoryFilter">
+                        <i class="bi bi-funnel"></i>
+                    </label>
+                    <select id="categoryFilter" class="form-select form-select-sm" @bind="_selectedCategory" @bind:after="LoadNotificationsAsync">
+                        <option value="">All Categories</option>
+                        <option value="@NotificationCategories.BadFileReport">Bad File Report</option>
+                        <option value="@NotificationCategories.BatchImport">Batch Import</option>
+                        <option value="@NotificationCategories.BatchExport">Batch Export</option>
+                        <option value="@NotificationCategories.DocumentUpload">Document Upload</option>
+                        <option value="@NotificationCategories.Security">Security</option>
+                        <option value="@NotificationCategories.System">System</option>
+                        <option value="@NotificationCategories.RoleChange">Role Change</option>
+                        <option value="@NotificationCategories.ProjectAccess">Project Access</option>
+                        <option value="@NotificationCategories.General">General</option>
+                    </select>
+                </div>
+
+                <!-- Read/Unread Filter -->
+                <div class="input-group input-group-sm" style="max-width: 160px;">
+                    <label class="input-group-text" for="readFilter">
+                        <i class="bi bi-eye"></i>
+                    </label>
+                    <select id="readFilter" class="form-select form-select-sm" @bind="_selectedReadFilter" @bind:after="LoadNotificationsAsync">
+                        <option value="">All</option>
+                        <option value="false">Unread</option>
+                        <option value="true">Read</option>
+                    </select>
+                </div>
+
+                <!-- Important Filter -->
+                <div class="input-group input-group-sm" style="max-width: 180px;">
+                    <label class="input-group-text" for="importantFilter">
+                        <i class="bi bi-star"></i>
+                    </label>
+                    <select id="importantFilter" class="form-select form-select-sm" @bind="_selectedImportantFilter" @bind:after="LoadNotificationsAsync">
+                        <option value="">All Priority</option>
+                        <option value="true">Important Only</option>
+                    </select>
+                </div>
+
+                <div class="flex-grow-1"></div>
+
+                <!-- Bulk Actions -->
+                @if (_selectedIds.Count > 0)
+                {
+                    <button class="btn btn-outline-danger btn-sm" @onclick="BulkDeleteSelectedAsync">
+                        <i class="bi bi-trash me-1"></i>
+                        Delete (@_selectedIds.Count)
+                    </button>
+                }
+
+                <button class="btn btn-outline-primary btn-sm" @onclick="MarkAllAsReadAsync" disabled="@(_response?.UnreadCount == 0)">
+                    <i class="bi bi-check2-all me-1"></i>
+                    Mark All Read
+                </button>
+
+                <button class="btn btn-outline-secondary btn-sm" @onclick="LoadNotificationsAsync">
+                    <i class="bi bi-arrow-clockwise me-1"></i>
+                    Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification List -->
+    @if (_isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else if (_response == null || _response.Notifications.Count == 0)
+    {
+        <div class="text-center py-5">
+            <i class="bi bi-bell-slash" style="font-size: 3rem; color: #ccc;"></i>
+            <h5 class="text-muted mt-3">No notifications</h5>
+            <p class="text-muted">You're all caught up!</p>
+        </div>
+    }
+    else
+    {
+        <div class="notification-list">
+            @foreach (var notification in _response.Notifications)
+            {
+                <div class="card mb-2 notification-card @(notification.IsRead ? "notification-read" : "notification-unread") @(notification.IsImportant ? "notification-important" : "")">
+                    <div class="card-body py-2 px-3">
+                        <div class="d-flex align-items-start gap-2">
+                            <!-- Checkbox -->
+                            <div class="pt-1">
+                                <input type="checkbox" class="form-check-input"
+                                       checked="@_selectedIds.Contains(notification.NotificationId)"
+                                       @onchange="() => ToggleSelection(notification.NotificationId)" />
+                            </div>
+
+                            <!-- Category Icon -->
+                            <div class="pt-1">
+                                <i class="bi @GetCategoryIcon(notification.Category) @GetCategoryColor(notification.Category)" style="font-size: 1.2rem;"></i>
+                            </div>
+
+                            <!-- Content -->
+                            <div class="flex-grow-1 min-width-0">
+                                <div class="d-flex align-items-center gap-2 mb-1">
+                                    @if (notification.IsImportant)
+                                    {
+                                        <i class="bi bi-star-fill text-warning" title="Important"></i>
+                                    }
+                                    @if (!notification.IsRead)
+                                    {
+                                        <span class="badge bg-primary badge-sm">NEW</span>
+                                    }
+                                    <strong class="@(notification.IsRead ? "text-muted" : "")">@notification.Title</strong>
+                                    <span class="badge bg-light text-dark badge-sm">@notification.Category</span>
+                                </div>
+                                <p class="mb-1 small @(notification.IsRead ? "text-muted" : "text-body")">
+                                    @notification.Message
+                                </p>
+                                <div class="d-flex align-items-center gap-3 text-muted" style="font-size: 0.75rem;">
+                                    <span title="@notification.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm:ss UTC")">
+                                        <i class="bi bi-clock me-1"></i>@notification.RelativeTime
+                                    </span>
+                                    @if (!string.IsNullOrEmpty(notification.SourceSystem))
+                                    {
+                                        <span><i class="bi bi-box me-1"></i>@notification.SourceSystem</span>
+                                    }
+                                    @if (notification.ReadAtUtc.HasValue)
+                                    {
+                                        <span title="@notification.ReadAtUtc.Value.ToString("yyyy-MM-dd HH:mm:ss UTC")">
+                                            <i class="bi bi-eye me-1"></i>Read
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+
+                            <!-- Actions -->
+                            <div class="d-flex align-items-center gap-1">
+                                @if (!notification.IsRead)
+                                {
+                                    <button class="btn btn-sm btn-outline-success" title="Mark as read"
+                                            @onclick="() => MarkAsReadAsync(notification.NotificationId)">
+                                        <i class="bi bi-check2"></i>
+                                    </button>
+                                }
+                                <button class="btn btn-sm btn-outline-danger" title="Delete"
+                                        @onclick="() => DeleteNotificationAsync(notification.NotificationId)">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- Pagination -->
+        @if (_response.TotalPages > 1)
+        {
+            <nav class="mt-3">
+                <ul class="pagination pagination-sm justify-content-center">
+                    <li class="page-item @(_currentPage <= 1 ? "disabled" : "")">
+                        <button class="page-link" @onclick="() => GoToPageAsync(_currentPage - 1)">
+                            <i class="bi bi-chevron-left"></i>
+                        </button>
+                    </li>
+                    @for (var i = Math.Max(1, _currentPage - 2); i <= Math.Min(_response.TotalPages, _currentPage + 2); i++)
+                    {
+                        var pageNum = i;
+                        <li class="page-item @(pageNum == _currentPage ? "active" : "")">
+                            <button class="page-link" @onclick="() => GoToPageAsync(pageNum)">@pageNum</button>
+                        </li>
+                    }
+                    <li class="page-item @(_currentPage >= _response.TotalPages ? "disabled" : "")">
+                        <button class="page-link" @onclick="() => GoToPageAsync(_currentPage + 1)">
+                            <i class="bi bi-chevron-right"></i>
+                        </button>
+                    </li>
+                </ul>
+                <div class="text-center text-muted small">
+                    Page @_currentPage of @_response.TotalPages (@_response.TotalCount total)
+                </div>
+            </nav>
+        }
+    }
+
+    @if (!string.IsNullOrEmpty(_statusMessage))
+    {
+        <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1080;">
+            <div class="toast show @(_statusIsError ? "bg-danger" : "bg-success") text-white">
+                <div class="toast-body d-flex align-items-center justify-content-between">
+                    <span>
+                        <i class="bi @(_statusIsError ? "bi-exclamation-circle" : "bi-check-circle") me-2"></i>
+                        @_statusMessage
+                    </span>
+                    <button type="button" class="btn-close btn-close-white ms-2" @onclick="() => _statusMessage = null"></button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .notification-unread {
+        border-left: 3px solid #0d6efd;
+        background-color: #f0f7ff;
+    }
+
+    .notification-read {
+        border-left: 3px solid transparent;
+        opacity: 0.8;
+    }
+
+    .notification-important.notification-unread {
+        border-left: 3px solid #ffc107;
+        background-color: #fffbeb;
+    }
+
+    .notification-card {
+        transition: all 0.15s ease;
+    }
+
+    .notification-card:hover {
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        transform: translateY(-1px);
+    }
+
+    .badge-sm {
+        font-size: 0.65rem;
+        padding: 0.15em 0.4em;
+    }
+
+    .min-width-0 {
+        min-width: 0;
+    }
+</style>
+
+@code {
+    private NotificationListResponseDto? _response;
+    private bool _isLoading = true;
+    private int _currentPage = 1;
+    private const int PageSize = 20;
+    private string? _selectedCategory;
+    private string? _selectedReadFilter;
+    private string? _selectedImportantFilter;
+    private HashSet<int> _selectedIds = new();
+    private string? _statusMessage;
+    private bool _statusIsError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadNotificationsAsync();
+    }
+
+    private async Task LoadNotificationsAsync()
+    {
+        _isLoading = true;
+        StateHasChanged();
+
+        bool? isRead = string.IsNullOrEmpty(_selectedReadFilter) ? null : bool.Parse(_selectedReadFilter);
+        bool? isImportant = string.IsNullOrEmpty(_selectedImportantFilter) ? null : bool.Parse(_selectedImportantFilter);
+
+        _response = await NotificationService.GetNotificationsAsync(
+            page: _currentPage,
+            pageSize: PageSize,
+            category: _selectedCategory,
+            isRead: isRead,
+            isImportant: isImportant);
+
+        _selectedIds.Clear();
+        _isLoading = false;
+    }
+
+    private async Task GoToPageAsync(int page)
+    {
+        _currentPage = page;
+        await LoadNotificationsAsync();
+    }
+
+    private async Task MarkAsReadAsync(int notificationId)
+    {
+        var success = await NotificationService.MarkAsReadAsync(notificationId);
+        if (success)
+        {
+            ShowStatus("Notification marked as read");
+            await LoadNotificationsAsync();
+        }
+        else
+        {
+            ShowStatus("Failed to mark notification as read", true);
+        }
+    }
+
+    private async Task MarkAllAsReadAsync()
+    {
+        var count = await NotificationService.MarkAllAsReadAsync();
+        ShowStatus($"{count} notifications marked as read");
+        await LoadNotificationsAsync();
+    }
+
+    private async Task DeleteNotificationAsync(int notificationId)
+    {
+        var success = await NotificationService.DeleteNotificationAsync(notificationId);
+        if (success)
+        {
+            ShowStatus("Notification deleted");
+            await LoadNotificationsAsync();
+        }
+        else
+        {
+            ShowStatus("Failed to delete notification", true);
+        }
+    }
+
+    private async Task BulkDeleteSelectedAsync()
+    {
+        if (_selectedIds.Count == 0) return;
+
+        var count = await NotificationService.BulkDeleteAsync(_selectedIds.ToList());
+        _selectedIds.Clear();
+        ShowStatus($"{count} notifications deleted");
+        await LoadNotificationsAsync();
+    }
+
+    private void ToggleSelection(int notificationId)
+    {
+        if (!_selectedIds.Remove(notificationId))
+        {
+            _selectedIds.Add(notificationId);
+        }
+    }
+
+    private void ShowStatus(string message, bool isError = false)
+    {
+        _statusMessage = message;
+        _statusIsError = isError;
+
+        _ = Task.Delay(3000).ContinueWith(_ =>
+        {
+            _statusMessage = null;
+            InvokeAsync(StateHasChanged);
+        });
+    }
+
+    private static string GetCategoryIcon(string category) => category switch
+    {
+        NotificationCategories.BadFileReport => "bi-exclamation-triangle",
+        NotificationCategories.BatchImport => "bi-cloud-upload",
+        NotificationCategories.BatchExport => "bi-cloud-download",
+        NotificationCategories.DocumentUpload => "bi-file-earmark-arrow-up",
+        NotificationCategories.Security => "bi-shield-exclamation",
+        NotificationCategories.System => "bi-gear",
+        NotificationCategories.RoleChange => "bi-person-badge",
+        NotificationCategories.ProjectAccess => "bi-folder-check",
+        NotificationCategories.SessionAlert => "bi-clock-history",
+        _ => "bi-bell"
+    };
+
+    private static string GetCategoryColor(string category) => category switch
+    {
+        NotificationCategories.BadFileReport => "text-warning",
+        NotificationCategories.Security => "text-danger",
+        NotificationCategories.System => "text-info",
+        NotificationCategories.SessionAlert => "text-warning",
+        _ => "text-primary"
+    };
+}

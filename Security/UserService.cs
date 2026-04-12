@@ -1,5 +1,6 @@
 using DV.Admin.UI.Data;
 using DV.Admin.UI.Infrastructure.Caching;
+using DV.Shared.DTOs;
 using DV.Shared.Security;
 using DV.Shared.Security;
 using DV.Admin.UI.Infrastructure.Caching;
@@ -17,12 +18,14 @@ public class UserService
     private readonly SecurityDbContext _context;
     private readonly ICacheService _cache;
     private readonly ILogger<UserService> _logger;
+    private readonly NotificationApiService _notificationService;
 
-    public UserService(SecurityDbContext context, ICacheService cache, ILogger<UserService> logger)
+    public UserService(SecurityDbContext context, ICacheService cache, ILogger<UserService> logger, NotificationApiService notificationService)
     {
         _context = context;
         _cache = cache;
         _logger = logger;
+        _notificationService = notificationService;
     }
 
     public async Task<ApplicationUser?> GetUserByUsernameAsync(string username)
@@ -260,6 +263,25 @@ public class UserService
     public async Task PromoteToGlobalAdminAsync(int userId)
     {
         await SetGlobalAdminAsync(userId, true);
+
+        // SI-5: RoleChange notification — promoted to global admin
+        try
+        {
+            await _notificationService.CreateNotificationAsync(new CreateNotificationDto
+            {
+                UserId = userId,
+                Title = "Promoted to Global Admin",
+                Message = "You have been granted Global Administrator privileges.",
+                Category = NotificationCategories.RoleChange,
+                IsImportant = true,
+                SourceSystem = NotificationSources.Admin,
+                CorrelationId = $"promote-admin-{userId}"
+            });
+        }
+        catch (Exception notifEx)
+        {
+            _logger.LogWarning(notifEx, "Failed to create promotion notification for user {UserId}", userId);
+        }
     }
     
     /// <summary>
@@ -268,6 +290,25 @@ public class UserService
     public async Task RemoveGlobalAdminAsync(int userId)
     {
         await SetGlobalAdminAsync(userId, false);
+
+        // SI-5: RoleChange notification — removed from global admin
+        try
+        {
+            await _notificationService.CreateNotificationAsync(new CreateNotificationDto
+            {
+                UserId = userId,
+                Title = "Global Admin Removed",
+                Message = "Your Global Administrator privileges have been removed.",
+                Category = NotificationCategories.RoleChange,
+                IsImportant = true,
+                SourceSystem = NotificationSources.Admin,
+                CorrelationId = $"demote-admin-{userId}"
+            });
+        }
+        catch (Exception notifEx)
+        {
+            _logger.LogWarning(notifEx, "Failed to create demotion notification for user {UserId}", userId);
+        }
     }
 
     /// <summary>

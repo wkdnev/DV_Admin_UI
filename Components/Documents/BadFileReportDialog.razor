@@ -20,9 +20,11 @@
 @using DV.Shared.Models
 @using DV.Admin.UI.Services
 @using DV.Shared.Security
+@using DV.Shared.DTOs
 @using Microsoft.AspNetCore.Components.Authorization
 @inject RoleContextService RoleContext
 @inject UserService UserService
+@inject NotificationApiService NotificationService
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
 @inject AuthenticationStateProvider AuthStateProvider
@@ -248,6 +250,24 @@
             
             // Log to console for now
             Console.WriteLine($"BadFileReport: User {currentUsername} (ID: {currentUserId}) reported {reportType} for Document {detectedDocumentId}, Page {detectedPageNumber}");
+
+            // SI-5: BadFileReport notification
+            try
+            {
+                await NotificationService.CreateNotificationAsync(new CreateNotificationDto
+                {
+                    UserId = currentUserId,
+                    Title = "Bad File Report Submitted",
+                    Message = $"Your report for Document {detectedDocumentId}, Page {detectedPageNumber} ({reportType}) has been submitted.",
+                    Category = NotificationCategories.BadFileReport,
+                    SourceSystem = NotificationSources.Admin,
+                    CorrelationId = $"badfile-{detectedDocumentId}-{detectedPageNumber}"
+                });
+            }
+            catch (Exception notifEx)
+            {
+                Console.WriteLine($"Failed to create bad file report notification: {notifEx.Message}");
+            }
 
             // Clear form
             await Task.Delay(2000); // Show success message for 2 seconds

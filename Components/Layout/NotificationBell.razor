@@ -1,0 +1,93 @@
+@* ============================================================================
+   NotificationBell.razor - Bell Icon with Unread Count (Admin UI)
+   ============================================================================
+   Displays a bell icon in the header with badge showing unread count.
+   Polls the API for unread count at regular intervals.
+   Clicking navigates to the notifications page.
+   ============================================================================ *@
+
+@using DV.Admin.UI.Services
+@using DV.Shared.DTOs
+@inject NotificationApiService NotificationService
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<div class="notification-bell-container position-relative d-inline-block">
+    <a href="/notifications" class="btn btn-outline-light btn-sm position-relative notification-bell-btn" title="Notifications">
+        @if (_unreadCount > 0)
+        {
+            <i class="bi bi-bell-fill"></i>
+            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill @(_importantCount > 0 ? "bg-danger" : "bg-primary") notification-badge">
+                @(_unreadCount > 99 ? "99+" : _unreadCount.ToString())
+                <span class="visually-hidden">unread notifications</span>
+            </span>
+        }
+        else
+        {
+            <i class="bi bi-bell"></i>
+        }
+    </a>
+</div>
+
+<style>
+    .notification-bell-btn {
+        border: none !important;
+        font-size: 1.1rem;
+        padding: 0.25rem 0.5rem;
+        transition: transform 0.2s ease;
+    }
+
+    .notification-bell-btn:hover {
+        transform: scale(1.15);
+        background: rgba(255, 255, 255, 0.1) !important;
+    }
+
+    .notification-badge {
+        font-size: 0.65rem;
+        min-width: 1.2rem;
+        padding: 0.2em 0.45em;
+        animation: bellPulse 2s ease-in-out infinite;
+    }
+
+    @@keyframes bellPulse {
+        0%, 100% { transform: translate(-50%, -50%) scale(1); }
+        50% { transform: translate(-50%, -50%) scale(1.1); }
+    }
+</style>
+
+@code {
+    private int _unreadCount;
+    private int _importantCount;
+    private Timer? _pollTimer;
+    private const int PollIntervalSeconds = 30;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshCountAsync();
+
+        _pollTimer = new Timer(async _ =>
+        {
+            await RefreshCountAsync();
+            await InvokeAsync(StateHasChanged);
+        }, null, TimeSpan.FromSeconds(PollIntervalSeconds), TimeSpan.FromSeconds(PollIntervalSeconds));
+    }
+
+    private async Task RefreshCountAsync()
+    {
+        try
+        {
+            var result = await NotificationService.GetUnreadCountAsync();
+            _unreadCount = result.UnreadCount;
+            _importantCount = result.ImportantUnreadCount;
+        }
+        catch
+        {
+            // Silently handle polling errors to avoid UI disruption
+        }
+    }
+
+    public void Dispose()
+    {
+        _pollTimer?.Dispose();
+    }
+}

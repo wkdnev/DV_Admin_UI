@@ -28,12 +28,10 @@ public class SchemaBlobMigrationService
             // Use ExecuteScalarAsync for reliable column counting
             var sql = $@"
                 SELECT COUNT(*) 
-                FROM sys.columns c
-                INNER JOIN sys.tables t ON c.object_id = t.object_id
-                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-                WHERE s.name = '{schemaName}' 
-                  AND t.name = 'DocumentPage' 
-                  AND c.name IN ('FileContent', 'FileSize', 'ContentType', 'UploadedDate', 'ChecksumMD5', 'StorageType')";
+                FROM information_schema.columns
+                WHERE table_schema = '{schemaName}' 
+                  AND table_name = 'DocumentPage' 
+                  AND column_name IN ('FileContent', 'FileSize', 'ContentType', 'UploadedDate', 'ChecksumMD5', 'StorageType')";
             
             using var command = _context.Database.GetDbConnection().CreateCommand();
             command.CommandText = sql;
@@ -63,16 +61,9 @@ public class SchemaBlobMigrationService
         {
             // Use ExecuteSqlRaw to execute a simple existence check
             var sql = $@"
-                DECLARE @Count INT;
-                SELECT @Count = COUNT(*) 
-                FROM sys.tables t 
-                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id 
-                WHERE s.name = '{schemaName}' AND t.name = 'DocumentPage';
-                
-                IF @Count > 0
-                    SELECT 1 AS Result
-                ELSE
-                    SELECT 0 AS Result";
+                SELECT CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END AS ""Result""
+                FROM information_schema.tables
+                WHERE table_schema = '{schemaName}' AND table_name = 'DocumentPage'";
             
             using var command = _context.Database.GetDbConnection().CreateCommand();
             command.CommandText = sql;
@@ -102,34 +93,20 @@ public class SchemaBlobMigrationService
         {
             var sql = $@"
                 -- Add BLOB storage columns if they don't exist
-                IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{schemaName}' AND TABLE_NAME = 'DocumentPage' AND COLUMN_NAME = 'FileContent')
-                    ALTER TABLE [{schemaName}].[DocumentPage] ADD [FileContent] varbinary(max) NULL;
-
-                IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{schemaName}' AND TABLE_NAME = 'DocumentPage' AND COLUMN_NAME = 'FileSize')
-                    ALTER TABLE [{schemaName}].[DocumentPage] ADD [FileSize] bigint NULL;
-
-                IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{schemaName}' AND TABLE_NAME = 'DocumentPage' AND COLUMN_NAME = 'ContentType')
-                    ALTER TABLE [{schemaName}].[DocumentPage] ADD [ContentType] nvarchar(100) NULL;
-
-                IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{schemaName}' AND TABLE_NAME = 'DocumentPage' AND COLUMN_NAME = 'UploadedDate')
-                    ALTER TABLE [{schemaName}].[DocumentPage] ADD [UploadedDate] datetime2 NULL;
-
-                IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{schemaName}' AND TABLE_NAME = 'DocumentPage' AND COLUMN_NAME = 'ChecksumMD5')
-                    ALTER TABLE [{schemaName}].[DocumentPage] ADD [ChecksumMD5] nvarchar(32) NULL;
-
-                IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{schemaName}' AND TABLE_NAME = 'DocumentPage' AND COLUMN_NAME = 'StorageType')
-                    ALTER TABLE [{schemaName}].[DocumentPage] ADD [StorageType] int NOT NULL DEFAULT 0;
+                ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""FileContent"" bytea NULL;
+                ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""FileSize"" bigint NULL;
+                ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""ContentType"" varchar(100) NULL;
+                ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""UploadedDate"" timestamp NULL;
+                ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""ChecksumMD5"" varchar(32) NULL;
+                ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""StorageType"" integer NOT NULL DEFAULT 0;
 
                 -- Update FilePath to allow NULL (for BLOB-only storage)
-                IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{schemaName}' AND TABLE_NAME = 'DocumentPage' AND COLUMN_NAME = 'FilePath' AND IS_NULLABLE = 'NO')
-                    ALTER TABLE [{schemaName}].[DocumentPage] ALTER COLUMN [FilePath] nvarchar(1000) NULL;
+                ALTER TABLE ""{schemaName}"".""DocumentPage"" ALTER COLUMN ""FilePath"" DROP NOT NULL;
+                ALTER TABLE ""{schemaName}"".""DocumentPage"" ALTER COLUMN ""FilePath"" TYPE varchar(1000);
 
                 -- Add indexes if they don't exist
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_{schemaName}_DocumentPage_StorageType')
-                    CREATE INDEX [IX_{schemaName}_DocumentPage_StorageType] ON [{schemaName}].[DocumentPage] ([StorageType]);
-
-                IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_{schemaName}_DocumentPage_DocumentId_PageNumber')
-                    CREATE UNIQUE INDEX [IX_{schemaName}_DocumentPage_DocumentId_PageNumber] ON [{schemaName}].[DocumentPage] ([DocumentId], [PageNumber]);
+                CREATE INDEX IF NOT EXISTS ""IX_{schemaName}_DocumentPage_StorageType"" ON ""{schemaName}"".""DocumentPage"" (""StorageType"");
+                CREATE UNIQUE INDEX IF NOT EXISTS ""IX_{schemaName}_DocumentPage_DocumentId_PageNumber"" ON ""{schemaName}"".""DocumentPage"" (""DocumentId"", ""PageNumber"");
             ";
 
             await _context.Database.ExecuteSqlRawAsync(sql);
@@ -268,7 +245,7 @@ public class SchemaBlobMigrationService
         try
         {
             // Check if schema exists using ExecuteScalarAsync
-            var schemaExistsSql = $"SELECT COUNT(*) FROM sys.schemas WHERE name = '{schemaName}'";
+            var schemaExistsSql = $"SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = '{schemaName}'";
             
             using var connection = _context.Database.GetDbConnection();
             if (connection.State != System.Data.ConnectionState.Open)
@@ -283,10 +260,9 @@ public class SchemaBlobMigrationService
             {
                 // Get all tables in the schema
                 var tablesSql = $@"
-                    SELECT t.name 
-                    FROM sys.tables t 
-                    INNER JOIN sys.schemas s ON t.schema_id = s.schema_id 
-                    WHERE s.name = '{schemaName}'";
+                    SELECT table_name 
+                    FROM information_schema.tables 
+                    WHERE table_schema = '{schemaName}'";
                 
                 using var tablesCommand = connection.CreateCommand();
                 tablesCommand.CommandText = tablesSql;
@@ -302,12 +278,10 @@ public class SchemaBlobMigrationService
                 if (debugInfo.TablesInSchema.Contains("DocumentPage"))
                 {
                     var columnsSql = $@"
-                        SELECT c.name 
-                        FROM sys.columns c
-                        INNER JOIN sys.tables t ON c.object_id = t.object_id
-                        INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-                        WHERE s.name = '{schemaName}' AND t.name = 'DocumentPage'
-                        ORDER BY c.column_id";
+                        SELECT column_name 
+                        FROM information_schema.columns
+                        WHERE table_schema = '{schemaName}' AND table_name = 'DocumentPage'
+                        ORDER BY ordinal_position";
                     
                     using var columnsCommand = connection.CreateCommand();
                     columnsCommand.CommandText = columnsSql;

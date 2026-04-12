@@ -21,9 +21,11 @@ using DV.Admin.UI.Data;
 // - Provides fine-grained access control at the project level
 // ============================================================================
 
+using DV.Shared.DTOs;
 using DV.Shared.Security;
 using DV.Shared.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DV.Admin.UI.Services;
 
@@ -34,11 +36,15 @@ public class ProjectRoleService
 {
     private readonly SecurityDbContext _securityContext;
     private readonly AppDbContext _appContext;
+    private readonly NotificationApiService _notificationService;
+    private readonly ILogger<ProjectRoleService> _logger;
 
-    public ProjectRoleService(SecurityDbContext securityContext, AppDbContext appContext)
+    public ProjectRoleService(SecurityDbContext securityContext, AppDbContext appContext, NotificationApiService notificationService, ILogger<ProjectRoleService> logger)
     {
         _securityContext = securityContext;
         _appContext = appContext;
+        _notificationService = notificationService;
+        _logger = logger;
     }
 
     // ========================================================================
@@ -191,6 +197,25 @@ public class ProjectRoleService
         }
 
         await _securityContext.SaveChangesAsync();
+
+        // SI-5: RoleChange notification — assigned to project role
+        try
+        {
+            var project = await _appContext.Projects.FindAsync(projectRole.ProjectId);
+            await _notificationService.CreateNotificationAsync(new CreateNotificationDto
+            {
+                UserId = userId,
+                Title = "Project Role Assigned",
+                Message = $"You have been assigned the role '{projectRole.DisplayName}' on project '{project?.ProjectName ?? "Unknown"}'.",
+                Category = NotificationCategories.RoleChange,
+                SourceSystem = NotificationSources.Admin,
+                CorrelationId = $"role-assign-{userId}-{projectRoleId}"
+            });
+        }
+        catch (Exception notifEx)
+        {
+            _logger.LogWarning(notifEx, "Failed to send role assignment notification for user {UserId}, role {ProjectRoleId}", userId, projectRoleId);
+        }
     }
 
     /// <summary>
@@ -205,6 +230,26 @@ public class ProjectRoleService
         {
             assignment.IsActive = false;
             await _securityContext.SaveChangesAsync();
+
+            // SI-5: RoleChange notification — removed from project role
+            try
+            {
+                var projectRole = await _securityContext.ProjectRoles.FindAsync(projectRoleId);
+                var project = projectRole != null ? await _appContext.Projects.FindAsync(projectRole.ProjectId) : null;
+                await _notificationService.CreateNotificationAsync(new CreateNotificationDto
+                {
+                    UserId = userId,
+                    Title = "Project Role Removed",
+                    Message = $"You have been removed from the role '{projectRole?.DisplayName ?? "Unknown"}' on project '{project?.ProjectName ?? "Unknown"}'.",
+                    Category = NotificationCategories.RoleChange,
+                    SourceSystem = NotificationSources.Admin,
+                    CorrelationId = $"role-remove-{userId}-{projectRoleId}"
+                });
+            }
+            catch (Exception notifEx)
+            {
+                _logger.LogWarning(notifEx, "Failed to send role removal notification for user {UserId}, role {ProjectRoleId}", userId, projectRoleId);
+            }
         }
     }
 

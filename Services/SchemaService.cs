@@ -22,7 +22,7 @@ using DV.Admin.UI.Data;
 // ============================================================================
 
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Data.SqlClient;
+using Npgsql;
 using DV.Shared.Models;
 
 namespace DV.Admin.UI.Services;
@@ -100,173 +100,224 @@ public class SchemaService
         Console.WriteLine($"Creating schema: {schemaName}");
         
         // Create the schema
-        var createSchemaQuery = $"IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{schemaName}') EXEC('CREATE SCHEMA [{schemaName}]')";
+        var createSchemaQuery = $"CREATE SCHEMA IF NOT EXISTS \"{schemaName}\"";
         Console.WriteLine($"Creating schema: {schemaName}");
         await db.Database.ExecuteSqlRawAsync(createSchemaQuery);
 
         // Create Document table in the schema
         var createDocumentTableQuery = $@"
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND type in (N'U'))
-            BEGIN
-                CREATE TABLE [{schemaName}].[Document] (
-                    [DocumentId] int IDENTITY(1,1) NOT NULL,
-                    [ProjectId] int NOT NULL,
-                    [DocumentIndex] nvarchar(12) NULL,
-                    [DocumentNumber] nvarchar(50) NOT NULL,
-                    [Version] nvarchar(20) NULL,
-                    [Issue] nvarchar(10) NULL,
-                    [Status] nvarchar(50) NULL,
-                    [DocumentStatus] nvarchar(50) NULL,
-                    [Title] nvarchar(255) NULL,
-                    [Author] nvarchar(100) NULL,
-                    [Keywords] nvarchar(500) NULL,
-                    [Memo] nvarchar(max) NULL,
-                    [DocumentType] nvarchar(20) NOT NULL,
-                    [Classification] nvarchar(50) NULL,
-                    [FilePath] nvarchar(500) NULL,
-                    [DocumentDate] datetime2 NULL,
-                    
-                    -- Custom Text Fields
-                    [Text01] nvarchar(255) NULL,
-                    [Text02] nvarchar(255) NULL,
-                    [Text03] nvarchar(255) NULL,
-                    [Text04] nvarchar(255) NULL,
-                    [Text05] nvarchar(255) NULL,
-                    [Text06] nvarchar(255) NULL,
-                    [Text07] nvarchar(255) NULL,
-                    [Text08] nvarchar(255) NULL,
-                    [Text09] nvarchar(255) NULL,
-                    [Text10] nvarchar(255) NULL,
-                    [Text11] nvarchar(255) NULL,
-                    [Text12] nvarchar(255) NULL,
-                    
-                    -- Custom Date Fields
-                    [Date01] datetime2 NULL,
-                    [Date02] datetime2 NULL,
-                    [Date03] datetime2 NULL,
-                    [Date04] datetime2 NULL,
-                    
-                    -- Custom Boolean Fields
-                    [Boolean01] bit NULL,
-                    [Boolean02] bit NULL,
-                    [Boolean03] bit NULL,
-                    
-                    -- Custom Number Fields
-                    [Number01] float NULL,
-                    [Number02] float NULL,
-                    [Number03] float NULL,
-                    
-                    -- Reference Fields
-                    [OldDM] nvarchar(50) NULL,
-                    [CM] nvarchar(50) NULL,
-                    [GM] nvarchar(50) NULL,
-                    [EM] nvarchar(50) NULL,
-                    
-                    -- Audit Fields
-                    [CreatedOn] datetime2(7) NOT NULL DEFAULT GETUTCDATE(),
-                    [CreatedBy] int NOT NULL,
-                    [ModifiedOn] datetime2 NULL,
-                    [ModifiedBy] int NULL,
-                    
-                    CONSTRAINT [PK_{schemaName}_Document] PRIMARY KEY CLUSTERED ([DocumentId] ASC),
-                    CONSTRAINT [FK_{schemaName}_Document_Project] FOREIGN KEY ([ProjectId]) REFERENCES [dbo].[Project] ([ProjectId]),
-                    CONSTRAINT [FK_{schemaName}_Document_CreatedBy] FOREIGN KEY ([CreatedBy]) REFERENCES [dbo].[ApplicationUser] ([UserId]) ON DELETE NO ACTION,
-                    CONSTRAINT [FK_{schemaName}_Document_ModifiedBy] FOREIGN KEY ([ModifiedBy]) REFERENCES [dbo].[ApplicationUser] ([UserId]) ON DELETE NO ACTION
-                )
-            END";
+            CREATE TABLE IF NOT EXISTS ""{schemaName}"".""Document"" (
+                ""DocumentId"" SERIAL NOT NULL,
+                ""ProjectId"" integer NOT NULL,
+                ""DocumentIndex"" varchar(12) NULL,
+                ""DocumentNumber"" varchar(50) NOT NULL,
+                ""Version"" varchar(20) NULL,
+                ""Issue"" varchar(10) NULL,
+                ""Status"" varchar(50) NULL,
+                ""DocumentStatus"" varchar(50) NULL,
+                ""Title"" varchar(255) NULL,
+                ""Author"" varchar(100) NULL,
+                ""Keywords"" varchar(500) NULL,
+                ""Memo"" text NULL,
+                ""DocumentType"" varchar(20) NOT NULL,
+                ""Classification"" varchar(50) NULL,
+                ""FilePath"" varchar(500) NULL,
+                ""DocumentDate"" timestamp NULL,
+                
+                -- Custom Text Fields
+                ""Text01"" varchar(255) NULL,
+                ""Text02"" varchar(255) NULL,
+                ""Text03"" varchar(255) NULL,
+                ""Text04"" varchar(255) NULL,
+                ""Text05"" varchar(255) NULL,
+                ""Text06"" varchar(255) NULL,
+                ""Text07"" varchar(255) NULL,
+                ""Text08"" varchar(255) NULL,
+                ""Text09"" varchar(255) NULL,
+                ""Text10"" varchar(255) NULL,
+                ""Text11"" varchar(255) NULL,
+                ""Text12"" varchar(255) NULL,
+                
+                -- Custom Date Fields
+                ""Date01"" timestamp NULL,
+                ""Date02"" timestamp NULL,
+                ""Date03"" timestamp NULL,
+                ""Date04"" timestamp NULL,
+                
+                -- Custom Boolean Fields
+                ""Boolean01"" boolean NULL,
+                ""Boolean02"" boolean NULL,
+                ""Boolean03"" boolean NULL,
+                
+                -- Custom Number Fields
+                ""Number01"" double precision NULL,
+                ""Number02"" double precision NULL,
+                ""Number03"" double precision NULL,
+                
+                -- Reference Fields
+                ""OldDM"" varchar(50) NULL,
+                ""CM"" varchar(50) NULL,
+                ""GM"" varchar(50) NULL,
+                ""EM"" varchar(50) NULL,
+                
+                -- Opaque Token
+                ""PublicToken"" varchar(44) NULL,
+
+                -- Audit Fields
+                ""CreatedOn"" timestamp NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
+                ""CreatedBy"" integer NOT NULL,
+                ""ModifiedOn"" timestamp NULL,
+                ""ModifiedBy"" integer NULL,
+                
+                CONSTRAINT ""PK_{schemaName}_Document"" PRIMARY KEY (""DocumentId"")
+            );
+            DO $$ BEGIN
+                ALTER TABLE ""{schemaName}"".""Document"" ADD CONSTRAINT ""FK_{schemaName}_Document_Project"" FOREIGN KEY (""ProjectId"") REFERENCES ""dbo"".""Project"" (""ProjectId"");
+            EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+            DO $$ BEGIN
+                ALTER TABLE ""{schemaName}"".""Document"" ADD CONSTRAINT ""FK_{schemaName}_Document_CreatedBy"" FOREIGN KEY (""CreatedBy"") REFERENCES ""dbo"".""ApplicationUser"" (""UserId"") ON DELETE NO ACTION;
+            EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+            DO $$ BEGIN
+                ALTER TABLE ""{schemaName}"".""Document"" ADD CONSTRAINT ""FK_{schemaName}_Document_ModifiedBy"" FOREIGN KEY (""ModifiedBy"") REFERENCES ""dbo"".""ApplicationUser"" (""UserId"") ON DELETE NO ACTION;
+            EXCEPTION WHEN duplicate_object THEN NULL; END $$";
         Console.WriteLine($"Creating Document table for schema: {schemaName}");
         await db.Database.ExecuteSqlRawAsync(createDocumentTableQuery);
 
         // Create DocumentPage table in the schema with BLOB storage support
         var createDocumentPageTableQuery = $@"
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND type in (N'U'))
-            BEGIN
-                CREATE TABLE [{schemaName}].[DocumentPage] (
-                    [PageId] int IDENTITY(1,1) NOT NULL,
-                    [DocumentId] int NOT NULL,
-                    [DocumentIndex] nvarchar(12) NOT NULL,
-                    [PageNumber] int NOT NULL,
-                    [PageReference] nvarchar(255) NULL,
-                    [FrameNumber] int NULL,
-                    
-                    -- Hierarchy Levels
-                    [Level1] nvarchar(50) NULL,
-                    [Level2] nvarchar(50) NULL,
-                    [Level3] nvarchar(50) NULL,
-                    [Level4] nvarchar(50) NULL,
-                    
-                    -- Disk Information
-                    [DiskNumber] nvarchar(10) NULL,
-                    
-                    -- File Information
-                    [FileName] nvarchar(255) NOT NULL,
-                    [FilePath] nvarchar(1000) NULL,
-                    [FileType] nvarchar(20) NOT NULL,
-                    
-                    -- BLOB Storage Columns
-                    [FileContent] varbinary(max) NULL,
-                    [FileSize] bigint NULL,
-                    [FileFormat] int NULL,
-                    [PageSize] nvarchar(5) NULL,
-                    [ContentType] nvarchar(100) NULL,
-                    [UploadedDate] datetime2 NULL,
-                    [ChecksumMD5] nvarchar(32) NULL,
-                    [StorageType] int NOT NULL DEFAULT 0,
-                    
-                    -- Audit Fields
-                    [CreatedOn] datetime2 NOT NULL DEFAULT GETUTCDATE(),
-                    [CreatedBy] int NOT NULL,
-                    [ModifiedOn] datetime2 NULL,
-                    [ModifiedBy] int NULL,
-                    
-                    CONSTRAINT [PK_{schemaName}_DocumentPage] PRIMARY KEY CLUSTERED ([PageId] ASC),
-                    CONSTRAINT [FK_{schemaName}_DocumentPage_Document] FOREIGN KEY ([DocumentId]) REFERENCES [{schemaName}].[Document] ([DocumentId]) ON DELETE CASCADE
-                );
+            CREATE TABLE IF NOT EXISTS ""{schemaName}"".""DocumentPage"" (
+                ""PageId"" SERIAL NOT NULL,
+                ""DocumentId"" integer NOT NULL,
+                ""DocumentIndex"" varchar(12) NOT NULL,
+                ""PageNumber"" integer NOT NULL,
+                ""PageReference"" varchar(255) NULL,
+                ""FrameNumber"" integer NULL,
                 
-                -- Create indexes for performance
-                CREATE INDEX [IX_{schemaName}_DocumentPage_DocumentId] ON [{schemaName}].[DocumentPage] ([DocumentId]);
-                CREATE INDEX [IX_{schemaName}_DocumentPage_DocumentIndex] ON [{schemaName}].[DocumentPage] ([DocumentIndex]);
-                CREATE INDEX [IX_{schemaName}_DocumentPage_StorageType] ON [{schemaName}].[DocumentPage] ([StorageType]);
-                CREATE UNIQUE INDEX [IX_{schemaName}_DocumentPage_DocumentId_PageNumber] ON [{schemaName}].[DocumentPage] ([DocumentId], [PageNumber]);
-            END";
+                -- Hierarchy Levels
+                ""Level1"" varchar(50) NULL,
+                ""Level2"" varchar(50) NULL,
+                ""Level3"" varchar(50) NULL,
+                ""Level4"" varchar(50) NULL,
+                
+                -- Disk Information
+                ""DiskNumber"" varchar(10) NULL,
+                
+                -- File Information
+                ""FileName"" varchar(255) NOT NULL,
+                ""FilePath"" varchar(1000) NULL,
+                ""FileType"" varchar(20) NOT NULL,
+                
+                -- BLOB Storage Columns
+                ""FileContent"" bytea NULL,
+                ""FileSize"" bigint NULL,
+                ""FileFormat"" integer NULL,
+                ""PageSize"" varchar(5) NULL,
+                ""ContentType"" varchar(100) NULL,
+                ""UploadedDate"" timestamp NULL,
+                ""ChecksumMD5"" varchar(32) NULL,
+                ""StorageType"" integer NOT NULL DEFAULT 0,
+                
+                -- Audit Fields
+                ""CreatedOn"" timestamp NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
+                ""CreatedBy"" integer NOT NULL,
+                ""ModifiedOn"" timestamp NULL,
+                ""ModifiedBy"" integer NULL,
+                
+                CONSTRAINT ""PK_{schemaName}_DocumentPage"" PRIMARY KEY (""PageId""),
+                CONSTRAINT ""FK_{schemaName}_DocumentPage_Document"" FOREIGN KEY (""DocumentId"") REFERENCES ""{schemaName}"".""Document"" (""DocumentId"") ON DELETE CASCADE
+            );
+            
+            -- Create indexes for performance
+            CREATE INDEX IF NOT EXISTS ""IX_{schemaName}_DocumentPage_DocumentId"" ON ""{schemaName}"".""DocumentPage"" (""DocumentId"");
+            CREATE INDEX IF NOT EXISTS ""IX_{schemaName}_DocumentPage_DocumentIndex"" ON ""{schemaName}"".""DocumentPage"" (""DocumentIndex"");
+            CREATE INDEX IF NOT EXISTS ""IX_{schemaName}_DocumentPage_StorageType"" ON ""{schemaName}"".""DocumentPage"" (""StorageType"");
+            CREATE UNIQUE INDEX IF NOT EXISTS ""IX_{schemaName}_DocumentPage_DocumentId_PageNumber"" ON ""{schemaName}"".""DocumentPage"" (""DocumentId"", ""PageNumber"")";
         Console.WriteLine($"Creating DocumentPage table for schema: {schemaName}");
         await db.Database.ExecuteSqlRawAsync(createDocumentPageTableQuery);
 
-        // Create BadFileReport table in the schema
+        // Create BadFileReport table in the schema (with upgraded columns)
         var createBadFileReportTableQuery = $@"
-            IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[{schemaName}].[BadFileReport]') AND type in (N'U'))
-            BEGIN
-                CREATE TABLE [{schemaName}].[BadFileReport] (
-                    [BadFileReportId] int IDENTITY(1,1) NOT NULL,
-                    [ReportedBy] int NOT NULL,
-                    [ReportedOn] datetime2(7) NOT NULL DEFAULT GETUTCDATE(),
-                    [DocumentPageId] int NOT NULL,
-                    [ReportType] nvarchar(50) NOT NULL,
-                    [ImageStatus] bit NULL,
-                    [ImageUrl] nvarchar(50) NULL,
-                    [UpdatedBy] int NOT NULL,
-                    [CorrectiveAction] nvarchar(50) NULL,
-                    [CreatedOn] datetime2(7) NOT NULL DEFAULT GETUTCDATE(),
-                    [CreatedBy] int NOT NULL,
-                    [ModifiedOn] datetime2(7) NULL,
-                    [ModifiedBy] int NULL,
-                    
-                    CONSTRAINT [PK_{schemaName}_BadFileReport] PRIMARY KEY CLUSTERED ([BadFileReportId] ASC),
-                    CONSTRAINT [FK_{schemaName}_BadFileReport_DocumentPage] FOREIGN KEY ([DocumentPageId]) REFERENCES [{schemaName}].[DocumentPage] ([PageId]) ON DELETE CASCADE,
-                    CONSTRAINT [FK_{schemaName}_BadFileReport_ReportedBy] FOREIGN KEY ([ReportedBy]) REFERENCES [dbo].[ApplicationUser] ([UserId]) ON DELETE NO ACTION,
-                    CONSTRAINT [FK_{schemaName}_BadFileReport_UpdatedBy] FOREIGN KEY ([UpdatedBy]) REFERENCES [dbo].[ApplicationUser] ([UserId]) ON DELETE NO ACTION,
-                    CONSTRAINT [FK_{schemaName}_BadFileReport_CreatedBy] FOREIGN KEY ([CreatedBy]) REFERENCES [dbo].[ApplicationUser] ([UserId]) ON DELETE NO ACTION,
-                    CONSTRAINT [FK_{schemaName}_BadFileReport_ModifiedBy] FOREIGN KEY ([ModifiedBy]) REFERENCES [dbo].[ApplicationUser] ([UserId]) ON DELETE NO ACTION
-                );
+            CREATE TABLE IF NOT EXISTS ""{schemaName}"".""BadFileReport"" (
+                ""BadFileReportId"" SERIAL NOT NULL,
+                ""ReportedBy"" integer NOT NULL,
+                ""ReportedOn"" timestamp NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
+                ""DocumentPageId"" integer NOT NULL,
+                ""DocumentId"" integer NOT NULL DEFAULT 0,
+                ""SchemaName"" varchar(128) NOT NULL DEFAULT '',
+                ""FileName"" varchar(500) NULL,
+                ""PageNumber"" integer NOT NULL DEFAULT 1,
+                ""ReportType"" varchar(50) NOT NULL,
+                ""Description"" text NULL,
+                ""Priority"" varchar(20) NOT NULL DEFAULT 'Normal',
+                ""Status"" varchar(30) NOT NULL DEFAULT 'Open',
+                ""ImageStatus"" boolean NULL,
+                ""ImageUrl"" varchar(500) NULL,
+                ""UpdatedBy"" integer NOT NULL,
+                ""CorrectiveAction"" text NULL,
+                ""ResolutionNotes"" text NULL,
+                ""ResolvedBy"" integer NULL,
+                ""ResolvedOn"" timestamp NULL,
+                ""CreatedOn"" timestamp NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
+                ""CreatedBy"" integer NOT NULL,
+                ""ModifiedOn"" timestamp NULL,
+                ""ModifiedBy"" integer NULL,
                 
-                -- Create indexes for performance
-                CREATE INDEX [IX_{schemaName}_BadFileReport_DocumentPageId] ON [{schemaName}].[BadFileReport] ([DocumentPageId]);
-                CREATE INDEX [IX_{schemaName}_BadFileReport_ReportedBy] ON [{schemaName}].[BadFileReport] ([ReportedBy]);
-                CREATE INDEX [IX_{schemaName}_BadFileReport_ReportType] ON [{schemaName}].[BadFileReport] ([ReportType]);
-                CREATE INDEX [IX_{schemaName}_BadFileReport_ImageStatus] ON [{schemaName}].[BadFileReport] ([ImageStatus]);
-            END";
+                CONSTRAINT ""PK_{schemaName}_BadFileReport"" PRIMARY KEY (""BadFileReportId""),
+                CONSTRAINT ""FK_{schemaName}_BadFileReport_DocumentPage"" FOREIGN KEY (""DocumentPageId"") REFERENCES ""{schemaName}"".""DocumentPage"" (""PageId"") ON DELETE CASCADE
+            );
+            DO $$ BEGIN
+                ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD CONSTRAINT ""FK_{schemaName}_BadFileReport_ReportedBy"" FOREIGN KEY (""ReportedBy"") REFERENCES ""dbo"".""ApplicationUser"" (""UserId"") ON DELETE NO ACTION;
+            EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+            DO $$ BEGIN
+                ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD CONSTRAINT ""FK_{schemaName}_BadFileReport_UpdatedBy"" FOREIGN KEY (""UpdatedBy"") REFERENCES ""dbo"".""ApplicationUser"" (""UserId"") ON DELETE NO ACTION;
+            EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+            DO $$ BEGIN
+                ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD CONSTRAINT ""FK_{schemaName}_BadFileReport_CreatedBy"" FOREIGN KEY (""CreatedBy"") REFERENCES ""dbo"".""ApplicationUser"" (""UserId"") ON DELETE NO ACTION;
+            EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+            DO $$ BEGIN
+                ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD CONSTRAINT ""FK_{schemaName}_BadFileReport_ModifiedBy"" FOREIGN KEY (""ModifiedBy"") REFERENCES ""dbo"".""ApplicationUser"" (""UserId"") ON DELETE NO ACTION;
+            EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+            DO $$ BEGIN
+                ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD CONSTRAINT ""FK_{schemaName}_BadFileReport_ResolvedBy"" FOREIGN KEY (""ResolvedBy"") REFERENCES ""dbo"".""ApplicationUser"" (""UserId"") ON DELETE NO ACTION;
+            EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+            
+            -- Create indexes for performance
+            CREATE INDEX IF NOT EXISTS ""IX_{schemaName}_BadFileReport_DocumentPageId"" ON ""{schemaName}"".""BadFileReport"" (""DocumentPageId"");
+            CREATE INDEX IF NOT EXISTS ""IX_{schemaName}_BadFileReport_ReportedBy"" ON ""{schemaName}"".""BadFileReport"" (""ReportedBy"");
+            CREATE INDEX IF NOT EXISTS ""IX_{schemaName}_BadFileReport_ReportType"" ON ""{schemaName}"".""BadFileReport"" (""ReportType"");
+            CREATE INDEX IF NOT EXISTS ""IX_{schemaName}_BadFileReport_ImageStatus"" ON ""{schemaName}"".""BadFileReport"" (""ImageStatus"");
+            CREATE INDEX IF NOT EXISTS ""IX_{schemaName}_BadFileReport_Status"" ON ""{schemaName}"".""BadFileReport"" (""Status"");
+            CREATE INDEX IF NOT EXISTS ""IX_{schemaName}_BadFileReport_DocumentId"" ON ""{schemaName}"".""BadFileReport"" (""DocumentId"")";
         Console.WriteLine($"Creating BadFileReport table for schema: {schemaName}");
         await db.Database.ExecuteSqlRawAsync(createBadFileReportTableQuery);
+
+        // Migrate existing BadFileReport tables to add new columns
+        var migrateBadFileReportQuery = $@"
+            ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD COLUMN IF NOT EXISTS ""DocumentId"" integer NOT NULL DEFAULT 0;
+            ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD COLUMN IF NOT EXISTS ""SchemaName"" varchar(128) NOT NULL DEFAULT '';
+            ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD COLUMN IF NOT EXISTS ""FileName"" varchar(500) NULL;
+            ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD COLUMN IF NOT EXISTS ""PageNumber"" integer NOT NULL DEFAULT 1;
+            ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD COLUMN IF NOT EXISTS ""Description"" text NULL;
+            ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD COLUMN IF NOT EXISTS ""Priority"" varchar(20) NOT NULL DEFAULT 'Normal';
+            ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD COLUMN IF NOT EXISTS ""Status"" varchar(30) NOT NULL DEFAULT 'Open';
+            ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD COLUMN IF NOT EXISTS ""ResolutionNotes"" text NULL;
+            ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD COLUMN IF NOT EXISTS ""ResolvedBy"" integer NULL;
+            ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD COLUMN IF NOT EXISTS ""ResolvedOn"" timestamp NULL;
+
+            -- Widen existing narrow columns
+            ALTER TABLE ""{schemaName}"".""BadFileReport"" ALTER COLUMN ""ImageUrl"" TYPE varchar(500);
+            ALTER TABLE ""{schemaName}"".""BadFileReport"" ALTER COLUMN ""CorrectiveAction"" TYPE text;
+
+            -- Add new indexes if missing
+            CREATE INDEX IF NOT EXISTS ""IX_{schemaName}_BadFileReport_Status"" ON ""{schemaName}"".""BadFileReport"" (""Status"");
+            CREATE INDEX IF NOT EXISTS ""IX_{schemaName}_BadFileReport_DocumentId"" ON ""{schemaName}"".""BadFileReport"" (""DocumentId"");
+
+            -- Add FK for ResolvedBy if missing
+            DO $$ BEGIN
+                ALTER TABLE ""{schemaName}"".""BadFileReport"" ADD CONSTRAINT ""FK_{schemaName}_BadFileReport_ResolvedBy"" FOREIGN KEY (""ResolvedBy"") REFERENCES ""dbo"".""ApplicationUser"" (""UserId"") ON DELETE NO ACTION;
+            EXCEPTION WHEN duplicate_object THEN NULL; END $$";
+        Console.WriteLine($"Migrating BadFileReport table for schema: {schemaName}");
+        await db.Database.ExecuteSqlRawAsync(migrateBadFileReportQuery);
     }
 
     // ========================================================================
@@ -316,17 +367,10 @@ public class SchemaService
         var db = ctx ?? _context;
         // Drop tables in reverse dependency order
         var dropTablesQuery = $@"
-            IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[{schemaName}].[BadFileReport]') AND type in (N'U'))
-                DROP TABLE [{schemaName}].[BadFileReport];
-            
-            IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND type in (N'U'))
-                DROP TABLE [{schemaName}].[DocumentPage];
-            
-            IF EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND type in (N'U'))
-                DROP TABLE [{schemaName}].[Document];
-            
-            IF EXISTS (SELECT * FROM sys.schemas WHERE name = '{schemaName}')
-                DROP SCHEMA [{schemaName}];";
+            DROP TABLE IF EXISTS ""{schemaName}"".""BadFileReport"";
+            DROP TABLE IF EXISTS ""{schemaName}"".""DocumentPage"";
+            DROP TABLE IF EXISTS ""{schemaName}"".""Document"";
+            DROP SCHEMA IF EXISTS ""{schemaName}"";";
 
         await db.Database.ExecuteSqlRawAsync(dropTablesQuery);
     }
@@ -339,23 +383,10 @@ public class SchemaService
     {
         try
         {
-            // Use ExecuteSqlRaw to run a simple test query that will succeed if the schema exists
-            // and fail if it doesn't - this is more reliable than SqlQueryRaw for schema checks
-            var testSql = $"SELECT 1 FROM sys.schemas WHERE name = '{schemaName}'";
-            
-            // Try to execute a simple query to check if schema exists
-            // This approach works better with EF Core's connection state management
-            try
-            {
-                await _context.Database.ExecuteSqlRawAsync(
-                    "IF EXISTS(SELECT 1 FROM sys.schemas WHERE name = {0}) SELECT 1 ELSE THROW 50000, 'Schema not found', 1", 
-                    schemaName);
-                return true; // If we get here, schema exists
-            }
-            catch (Exception)
-            {
-                return false; // If query throws, schema doesn't exist
-            }
+            var result = await _context.Database.SqlQueryRaw<int>(
+                "SELECT COUNT(*)::int AS \"Value\" FROM information_schema.schemata WHERE schema_name = {0}",
+                schemaName).FirstOrDefaultAsync();
+            return result > 0;
         }
         catch (Exception ex)
         {
@@ -382,97 +413,67 @@ public class SchemaService
         // Migrate Document table
         var migrateDocumentQuery = $@"
             -- Add new columns to Document table if they don't exist
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'DocumentIndex')
-                ALTER TABLE [{schemaName}].[Document] ADD [DocumentIndex] nvarchar(12) NULL;
-
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Issue')
-                ALTER TABLE [{schemaName}].[Document] ADD [Issue] nvarchar(10) NULL;
-
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'DocumentStatus')
-                ALTER TABLE [{schemaName}].[Document] ADD [DocumentStatus] nvarchar(50) NULL;
-
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'DocumentDate')
-                ALTER TABLE [{schemaName}].[Document] ADD [DocumentDate] datetime2 NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""DocumentIndex"" varchar(12) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Issue"" varchar(10) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""DocumentStatus"" varchar(50) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""DocumentDate"" timestamp NULL;
 
             -- Custom Text Fields
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Text01')
-                ALTER TABLE [{schemaName}].[Document] ADD [Text01] nvarchar(255) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Text02')
-                ALTER TABLE [{schemaName}].[Document] ADD [Text02] nvarchar(255) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Text03')
-                ALTER TABLE [{schemaName}].[Document] ADD [Text03] nvarchar(255) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Text04')
-                ALTER TABLE [{schemaName}].[Document] ADD [Text04] nvarchar(255) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Text05')
-                ALTER TABLE [{schemaName}].[Document] ADD [Text05] nvarchar(255) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Text06')
-                ALTER TABLE [{schemaName}].[Document] ADD [Text06] nvarchar(255) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Text07')
-                ALTER TABLE [{schemaName}].[Document] ADD [Text07] nvarchar(255) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Text08')
-                ALTER TABLE [{schemaName}].[Document] ADD [Text08] nvarchar(255) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Text09')
-                ALTER TABLE [{schemaName}].[Document] ADD [Text09] nvarchar(255) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Text10')
-                ALTER TABLE [{schemaName}].[Document] ADD [Text10] nvarchar(255) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Text11')
-                ALTER TABLE [{schemaName}].[Document] ADD [Text11] nvarchar(255) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Text12')
-                ALTER TABLE [{schemaName}].[Document] ADD [Text12] nvarchar(255) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Text01"" varchar(255) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Text02"" varchar(255) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Text03"" varchar(255) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Text04"" varchar(255) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Text05"" varchar(255) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Text06"" varchar(255) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Text07"" varchar(255) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Text08"" varchar(255) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Text09"" varchar(255) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Text10"" varchar(255) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Text11"" varchar(255) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Text12"" varchar(255) NULL;
 
             -- Custom Date Fields
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Date01')
-                ALTER TABLE [{schemaName}].[Document] ADD [Date01] datetime2 NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Date02')
-                ALTER TABLE [{schemaName}].[Document] ADD [Date02] datetime2 NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Date03')
-                ALTER TABLE [{schemaName}].[Document] ADD [Date03] datetime2 NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Date04')
-                ALTER TABLE [{schemaName}].[Document] ADD [Date04] datetime2 NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Date01"" timestamp NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Date02"" timestamp NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Date03"" timestamp NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Date04"" timestamp NULL;
 
             -- Custom Boolean Fields
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Boolean01')
-                ALTER TABLE [{schemaName}].[Document] ADD [Boolean01] bit NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Boolean02')
-                ALTER TABLE [{schemaName}].[Document] ADD [Boolean02] bit NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Boolean03')
-                ALTER TABLE [{schemaName}].[Document] ADD [Boolean03] bit NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Boolean01"" boolean NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Boolean02"" boolean NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Boolean03"" boolean NULL;
 
             -- Custom Number Fields
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Number01')
-                ALTER TABLE [{schemaName}].[Document] ADD [Number01] float NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Number02')
-                ALTER TABLE [{schemaName}].[Document] ADD [Number02] float NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'Number03')
-                ALTER TABLE [{schemaName}].[Document] ADD [Number03] float NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Number01"" double precision NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Number02"" double precision NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""Number03"" double precision NULL;
 
             -- Reference Fields
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'OldDM')
-                ALTER TABLE [{schemaName}].[Document] ADD [OldDM] nvarchar(50) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'CM')
-                ALTER TABLE [{schemaName}].[Document] ADD [CM] nvarchar(50) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'GM')
-                ALTER TABLE [{schemaName}].[Document] ADD [GM] nvarchar(50) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'EM')
-                ALTER TABLE [{schemaName}].[Document] ADD [EM] nvarchar(50) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""OldDM"" varchar(50) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""CM"" varchar(50) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""GM"" varchar(50) NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""EM"" varchar(50) NULL;
 
-            -- Audit Fields (add if not exist, with special handling for NOT NULL fields)
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'CreatedBy')
-                ALTER TABLE [{schemaName}].[Document] ADD [CreatedBy] int NOT NULL DEFAULT 0;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'ModifiedOn')
-                ALTER TABLE [{schemaName}].[Document] ADD [ModifiedOn] datetime2 NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'ModifiedBy')
-                ALTER TABLE [{schemaName}].[Document] ADD [ModifiedBy] int NULL;
+            -- Audit Fields
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""CreatedBy"" integer NOT NULL DEFAULT 0;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""ModifiedOn"" timestamp NULL;
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""ModifiedBy"" integer NULL;
             
             -- Drop old ModifiedDate column if it exists
-            IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[Document]') AND name = 'ModifiedDate')
-                ALTER TABLE [{schemaName}].[Document] DROP COLUMN [ModifiedDate];
+            ALTER TABLE ""{schemaName}"".""Document"" DROP COLUMN IF EXISTS ""ModifiedDate"";
             
             -- Add foreign keys if they don't exist
-            IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_{schemaName}_Document_CreatedBy' AND parent_object_id = OBJECT_ID(N'[{schemaName}].[Document]'))
-                ALTER TABLE [{schemaName}].[Document] ADD CONSTRAINT [FK_{schemaName}_Document_CreatedBy] FOREIGN KEY ([CreatedBy]) REFERENCES [dbo].[ApplicationUser] ([UserId]) ON DELETE NO ACTION;
-            IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_{schemaName}_Document_ModifiedBy' AND parent_object_id = OBJECT_ID(N'[{schemaName}].[Document]'))
-                ALTER TABLE [{schemaName}].[Document] ADD CONSTRAINT [FK_{schemaName}_Document_ModifiedBy] FOREIGN KEY ([ModifiedBy]) REFERENCES [dbo].[ApplicationUser] ([UserId]) ON DELETE NO ACTION;";
+            DO $$ BEGIN
+                ALTER TABLE ""{schemaName}"".""Document"" ADD CONSTRAINT ""FK_{schemaName}_Document_CreatedBy"" FOREIGN KEY (""CreatedBy"") REFERENCES ""dbo"".""ApplicationUser"" (""UserId"") ON DELETE NO ACTION;
+            EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+            DO $$ BEGIN
+                ALTER TABLE ""{schemaName}"".""Document"" ADD CONSTRAINT ""FK_{schemaName}_Document_ModifiedBy"" FOREIGN KEY (""ModifiedBy"") REFERENCES ""dbo"".""ApplicationUser"" (""UserId"") ON DELETE NO ACTION;
+            EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+            -- Opaque Token
+            ALTER TABLE ""{schemaName}"".""Document"" ADD COLUMN IF NOT EXISTS ""PublicToken"" varchar(44) NULL;
+
+            CREATE UNIQUE INDEX IF NOT EXISTS ""UX_{schemaName}_Document_PublicToken"" ON ""{schemaName}"".""Document"" (""PublicToken"") WHERE ""PublicToken"" IS NOT NULL";
 
         Console.WriteLine($"Migrating Document table for schema: {schemaName}");
         await _context.Database.ExecuteSqlRawAsync(migrateDocumentQuery);
@@ -480,45 +481,30 @@ public class SchemaService
         // Migrate DocumentPage table
         var migrateDocumentPageQuery = $@"
             -- Add new columns to DocumentPage table if they don't exist
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND name = 'DocumentIndex')
-                ALTER TABLE [{schemaName}].[DocumentPage] ADD [DocumentIndex] nvarchar(12) NOT NULL DEFAULT '';
-
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND name = 'FrameNumber')
-                ALTER TABLE [{schemaName}].[DocumentPage] ADD [FrameNumber] int NULL;
+            ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""DocumentIndex"" varchar(12) NOT NULL DEFAULT '';
+            ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""FrameNumber"" integer NULL;
 
             -- Hierarchy Levels
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND name = 'Level1')
-                ALTER TABLE [{schemaName}].[DocumentPage] ADD [Level1] nvarchar(50) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND name = 'Level2')
-                ALTER TABLE [{schemaName}].[DocumentPage] ADD [Level2] nvarchar(50) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND name = 'Level3')
-                ALTER TABLE [{schemaName}].[DocumentPage] ADD [Level3] nvarchar(50) NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND name = 'Level4')
-                ALTER TABLE [{schemaName}].[DocumentPage] ADD [Level4] nvarchar(50) NULL;
+            ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""Level1"" varchar(50) NULL;
+            ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""Level2"" varchar(50) NULL;
+            ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""Level3"" varchar(50) NULL;
+            ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""Level4"" varchar(50) NULL;
 
             -- Disk Information
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND name = 'DiskNumber')
-                ALTER TABLE [{schemaName}].[DocumentPage] ADD [DiskNumber] nvarchar(10) NULL;
+            ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""DiskNumber"" varchar(10) NULL;
 
             -- File Format and Page Size
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND name = 'FileFormat')
-                ALTER TABLE [{schemaName}].[DocumentPage] ADD [FileFormat] int NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND name = 'PageSize')
-                ALTER TABLE [{schemaName}].[DocumentPage] ADD [PageSize] nvarchar(5) NULL;
+            ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""FileFormat"" integer NULL;
+            ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""PageSize"" varchar(5) NULL;
 
             -- Audit Fields
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND name = 'CreatedOn')
-                ALTER TABLE [{schemaName}].[DocumentPage] ADD [CreatedOn] datetime2 NOT NULL DEFAULT GETUTCDATE();
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND name = 'CreatedBy')
-                ALTER TABLE [{schemaName}].[DocumentPage] ADD [CreatedBy] int NOT NULL DEFAULT 0;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND name = 'ModifiedOn')
-                ALTER TABLE [{schemaName}].[DocumentPage] ADD [ModifiedOn] datetime2 NULL;
-            IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND name = 'ModifiedBy')
-                ALTER TABLE [{schemaName}].[DocumentPage] ADD [ModifiedBy] int NULL;
+            ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""CreatedOn"" timestamp NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC');
+            ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""CreatedBy"" integer NOT NULL DEFAULT 0;
+            ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""ModifiedOn"" timestamp NULL;
+            ALTER TABLE ""{schemaName}"".""DocumentPage"" ADD COLUMN IF NOT EXISTS ""ModifiedBy"" integer NULL;
 
             -- Add index on DocumentIndex if it doesn't exist
-            IF NOT EXISTS (SELECT * FROM sys.indexes WHERE object_id = OBJECT_ID(N'[{schemaName}].[DocumentPage]') AND name = 'IX_{schemaName}_DocumentPage_DocumentIndex')
-                CREATE INDEX [IX_{schemaName}_DocumentPage_DocumentIndex] ON [{schemaName}].[DocumentPage] ([DocumentIndex]);";
+            CREATE INDEX IF NOT EXISTS ""IX_{schemaName}_DocumentPage_DocumentIndex"" ON ""{schemaName}"".""DocumentPage"" (""DocumentIndex"")";
 
         Console.WriteLine($"Migrating DocumentPage table for schema: {schemaName}");
         await _context.Database.ExecuteSqlRawAsync(migrateDocumentPageQuery);
@@ -536,12 +522,11 @@ public class SchemaService
         
         // Get all schemas that have Document tables
         var getSchemasQuery = @"
-            SELECT DISTINCT s.name AS Value
-            FROM sys.schemas s
-            INNER JOIN sys.tables t ON t.schema_id = s.schema_id
-            WHERE t.name = 'Document'
-            AND s.name NOT IN ('dbo', 'sys', 'guest', 'INFORMATION_SCHEMA')
-            ORDER BY s.name";
+            SELECT DISTINCT t.table_schema AS ""Value""
+            FROM information_schema.tables t
+            WHERE t.table_name = 'Document'
+            AND t.table_schema NOT IN ('dbo', 'pg_catalog', 'information_schema', 'public')
+            ORDER BY t.table_schema";
         
         var schemaResults = await _context.Database.SqlQueryRaw<ColumnNameResult>(getSchemasQuery).ToListAsync();
         var schemas = schemaResults.Select(s => s.Value).ToList();

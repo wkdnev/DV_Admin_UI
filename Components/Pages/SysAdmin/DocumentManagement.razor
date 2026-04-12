@@ -1,0 +1,797 @@
+@page "/sysadmin/document-management"
+@attribute [Authorize(Policy = "GlobalAdminOnly")]
+@using DV.Shared.Models
+@using DV.Shared.Security
+@using DV.Admin.UI.Services
+@using DV.Admin.UI.Data
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+@rendermode InteractiveServer
+
+<PageTitle>Document Management</PageTitle>
+
+<div class="lgreeny-dashboard">
+    <!-- Header -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+            <h2 style="margin: 0; color: #1e293b; font-size: 1.75rem; font-weight: 600;">📄 Document Management</h2>
+            <p style="margin: 0.5rem 0 0 0; color: #64748b; font-size: 0.875rem;">Comprehensive document CRUD operations, metadata editing, and page management</p>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+            @if (selectedProject != null)
+            {
+                <button class="lgreeny-btn-primary" style="width: auto;" @onclick="OpenCreateDialog">
+                    ➕ New Document
+                </button>
+                <button class="lgreeny-btn-secondary" style="width: auto;" @onclick="ExportCsv">
+                    📥 Export CSV
+                </button>
+            }
+            <button class="lgreeny-btn-secondary" style="width: auto;" @onclick="GoBackToDashboard">
+                ← Back
+            </button>
+        </div>
+    </div>
+
+    <!-- Project Selector -->
+    <div class="lgreeny-panel" style="margin-bottom: 1.5rem;">
+        <div class="panel-header">
+            <h3 class="panel-title">🗂️ Select Project Schema</h3>
+        </div>
+        <div class="panel-body">
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <select style="flex: 1; padding: 0.625rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.9375rem; background: white;"
+                        @onchange="OnProjectChanged">
+                    <option value="">— Select a project —</option>
+                    @if (projects != null)
+                    {
+                        @foreach (var p in projects)
+                        {
+                            <option value="@p.ProjectId" selected="@(selectedProject?.ProjectId == p.ProjectId)">@p.ProjectName (@p.SchemaName)</option>
+                        }
+                    }
+                </select>
+                @if (selectedProject != null)
+                {
+                    <button class="lgreeny-btn-secondary" style="width: auto; white-space: nowrap;" @onclick="RefreshData">
+                        🔄 Refresh
+                    </button>
+                }
+            </div>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div style="text-align: center; padding: 3rem;">
+            <div style="color: #3b82f6; font-size: 2rem;">⏳</div>
+            <p style="color: #64748b; margin-top: 1rem;">Loading documents...</p>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div style="padding: 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.5rem; color: #991b1b; margin-bottom: 1rem;">
+            <strong>⚠️ Error:</strong> @errorMessage
+        </div>
+    }
+    else if (selectedProject != null)
+    {
+        <!-- Statistics Cards -->
+        @if (stats != null)
+        {
+            <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+                <div style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); border-radius: 0.5rem; padding: 1.25rem; color: white; text-align: center;">
+                    <h6 style="margin: 0 0 0.5rem 0; font-size: 0.8rem; font-weight: 500; opacity: 0.9;">Total Documents</h6>
+                    <div style="font-size: 1.75rem; font-weight: 700;">@stats.TotalDocuments</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 0.5rem; padding: 1.25rem; color: white; text-align: center;">
+                    <h6 style="margin: 0 0 0.5rem 0; font-size: 0.8rem; font-weight: 500; opacity: 0.9;">Total Pages</h6>
+                    <div style="font-size: 1.75rem; font-weight: 700;">@stats.TotalPages</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); border-radius: 0.5rem; padding: 1.25rem; color: white; text-align: center;">
+                    <h6 style="margin: 0 0 0.5rem 0; font-size: 0.8rem; font-weight: 500; opacity: 0.9;">BLOB Pages</h6>
+                    <div style="font-size: 1.75rem; font-weight: 700;">@stats.BlobPages</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border-radius: 0.5rem; padding: 1.25rem; color: white; text-align: center;">
+                    <h6 style="margin: 0 0 0.5rem 0; font-size: 0.8rem; font-weight: 500; opacity: 0.9;">Storage</h6>
+                    <div style="font-size: 1.75rem; font-weight: 700;">@stats.FormattedStorage</div>
+                </div>
+                @{
+                    var topStatuses = stats.StatusBreakdown.OrderByDescending(s => s.Value).Take(2).ToList();
+                }
+                @foreach (var sb in topStatuses)
+                {
+                    <div style="background: linear-gradient(135deg, #64748b 0%, #475569 100%); border-radius: 0.5rem; padding: 1.25rem; color: white; text-align: center;">
+                        <h6 style="margin: 0 0 0.5rem 0; font-size: 0.8rem; font-weight: 500; opacity: 0.9;">@sb.Key</h6>
+                        <div style="font-size: 1.75rem; font-weight: 700;">@sb.Value</div>
+                    </div>
+                }
+                @for (int i = topStatuses.Count; i < 2; i++)
+                {
+                    <div style="background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%); border-radius: 0.5rem; padding: 1.25rem; color: white; text-align: center;">
+                        <h6 style="margin: 0 0 0.5rem 0; font-size: 0.8rem; font-weight: 500; opacity: 0.9;">—</h6>
+                        <div style="font-size: 1.75rem; font-weight: 700;">0</div>
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- Filters -->
+        <div class="lgreeny-panel" style="margin-bottom: 1.5rem;">
+            <div class="panel-header">
+                <h3 class="panel-title">🔍 Search & Filter</h3>
+            </div>
+            <div class="panel-body">
+                <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Search</label>
+                        <input type="text"
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;"
+                               placeholder="Title, author, doc number, keywords..."
+                               @bind="searchTerm"
+                               @bind:event="oninput"
+                               @onkeyup="@(async e => { if (e.Key == "Enter") await ApplyFilters(); })" />
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Status</label>
+                        <select style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;"
+                                @bind="filterStatus">
+                            <option value="">All</option>
+                            @foreach (var s in distinctStatuses)
+                            {
+                                <option value="@s">@s</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Type</label>
+                        <select style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;"
+                                @bind="filterType">
+                            <option value="">All</option>
+                            @foreach (var t in distinctTypes)
+                            {
+                                <option value="@t">@t</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Classification</label>
+                        <select style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;"
+                                @bind="filterClassification">
+                            <option value="">All</option>
+                            @foreach (var c in distinctClassifications)
+                            {
+                                <option value="@c">@c</option>
+                            }
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Date From</label>
+                        <input type="date"
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;"
+                               @bind="filterDateFrom" />
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 0.5rem; color: #1e293b; font-weight: 500; font-size: 0.875rem;">Date To</label>
+                        <input type="date"
+                               style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;"
+                               @bind="filterDateTo" />
+                    </div>
+                </div>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="lgreeny-btn-primary" style="padding: 0.5rem 1.5rem;" @onclick="ApplyFilters">
+                        🔍 Apply Filters
+                    </button>
+                    <button class="lgreeny-btn-secondary" style="padding: 0.5rem 1.5rem;" @onclick="ClearFilters">
+                        ❌ Clear
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bulk Actions Bar -->
+        @if (selectedDocumentIds.Count > 0)
+        {
+            <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 0.5rem; padding: 0.75rem 1.25rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: #1e40af; font-weight: 600; font-size: 0.9375rem;">
+                    ✅ @selectedDocumentIds.Count document(s) selected
+                </span>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <select style="padding: 0.375rem 0.5rem; border: 1px solid #93c5fd; border-radius: 0.375rem; font-size: 0.875rem; background: white;"
+                            @bind="bulkStatusValue">
+                        <option value="">Set Status...</option>
+                        @foreach (var s in distinctStatuses)
+                        {
+                            <option value="@s">@s</option>
+                        }
+                    </select>
+                    <button class="lgreeny-btn-primary" style="padding: 0.375rem 1rem; font-size: 0.875rem;" @onclick="BulkUpdateStatus" disabled="@string.IsNullOrEmpty(bulkStatusValue)">
+                        Update Status
+                    </button>
+                    <button class="lgreeny-btn-danger" style="padding: 0.375rem 1rem; font-size: 0.875rem;" @onclick="BulkDelete">
+                        🗑️ Delete Selected
+                    </button>
+                    <button class="lgreeny-btn-secondary" style="padding: 0.375rem 1rem; font-size: 0.875rem;" @onclick="ClearSelection">
+                        Clear Selection
+                    </button>
+                </div>
+            </div>
+        }
+
+        <!-- Documents Table -->
+        <div class="lgreeny-panel">
+            <div class="panel-header">
+                <h3 class="panel-title">📋 Documents (@totalCount results)</h3>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <label style="font-size: 0.8rem; color: #64748b;">Per page:</label>
+                    <select style="padding: 0.25rem 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.25rem; font-size: 0.8rem;"
+                            @bind="pageSize" @bind:after="ApplyFilters">
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                        <option value="250">250</option>
+                    </select>
+                </div>
+            </div>
+            <div class="panel-body" style="padding: 0;">
+                @if (documents == null || documents.Count == 0)
+                {
+                    <div style="padding: 3rem; text-align: center; color: #94a3b8;">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">📭</div>
+                        <p style="margin: 0;">No documents found. Try adjusting your filters or create a new document.</p>
+                    </div>
+                }
+                else
+                {
+                    <div style="overflow-x: auto;">
+                        <table class="lgreeny-table" style="margin: 0; min-width: 1100px;">
+                            <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 10;">
+                                <tr>
+                                    <th style="width: 40px; text-align: center;">
+                                        <input type="checkbox" @onchange="ToggleSelectAll" checked="@isAllSelected" title="Select all" />
+                                    </th>
+                                    <th style="cursor: pointer; user-select: none; white-space: nowrap;" @onclick='() => ToggleSort("DocumentId")'>
+                                        ID @SortIcon("DocumentId")
+                                    </th>
+                                    <th style="cursor: pointer; user-select: none; white-space: nowrap;" @onclick='() => ToggleSort("DocumentNumber")'>
+                                        Doc # @SortIcon("DocumentNumber")
+                                    </th>
+                                    <th style="cursor: pointer; user-select: none; max-width: 250px;" @onclick='() => ToggleSort("Title")'>
+                                        Title @SortIcon("Title")
+                                    </th>
+                                    <th style="cursor: pointer; user-select: none;" @onclick='() => ToggleSort("Author")'>
+                                        Author @SortIcon("Author")
+                                    </th>
+                                    <th style="cursor: pointer; user-select: none;" @onclick='() => ToggleSort("DocumentType")'>
+                                        Type @SortIcon("DocumentType")
+                                    </th>
+                                    <th style="cursor: pointer; user-select: none;" @onclick='() => ToggleSort("Status")'>
+                                        Status @SortIcon("Status")
+                                    </th>
+                                    <th style="cursor: pointer; user-select: none; white-space: nowrap;" @onclick='() => ToggleSort("CreatedOn")'>
+                                        Created @SortIcon("CreatedOn")
+                                    </th>
+                                    <th style="cursor: pointer; user-select: none; white-space: nowrap;" @onclick='() => ToggleSort("ModifiedOn")'>
+                                        Modified @SortIcon("ModifiedOn")
+                                    </th>
+                                    <th style="white-space: nowrap; text-align: center;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var doc in documents)
+                                {
+                                    <tr style="@(selectedDocumentIds.Contains(doc.DocumentId) ? "background: #eff6ff;" : "")">
+                                        <td style="text-align: center;">
+                                            <input type="checkbox" checked="@selectedDocumentIds.Contains(doc.DocumentId)"
+                                                   @onchange="e => ToggleDocumentSelection(doc.DocumentId, (bool)(e.Value ?? false))" />
+                                        </td>
+                                        <td style="font-size: 0.8rem; color: #64748b;">@doc.DocumentId</td>
+                                        <td style="font-size: 0.8rem; font-weight: 500; color: #1e293b; white-space: nowrap;" title="@doc.DocumentNumber">
+                                            @Truncate(doc.DocumentNumber, 20)
+                                        </td>
+                                        <td style="font-size: 0.875rem; color: #1e293b; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="@doc.Title">
+                                            @(doc.Title ?? "—")
+                                        </td>
+                                        <td style="font-size: 0.875rem; color: #475569;">@(doc.Author ?? "—")</td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(doc.DocumentType))
+                                            {
+                                                <span style="padding: 0.125rem 0.5rem; background: #e0e7ff; color: #3730a3; border-radius: 0.25rem; font-size: 0.75rem;">@doc.DocumentType</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <span style="@GetStatusBadgeStyle(doc.Status)">@(doc.Status ?? "—")</span>
+                                        </td>
+                                        <td style="font-size: 0.8rem; color: #64748b; white-space: nowrap;">
+                                            @doc.CreatedOn.ToString("yyyy-MM-dd")
+                                        </td>
+                                        <td style="font-size: 0.8rem; color: #64748b; white-space: nowrap;">
+                                            @(doc.ModifiedOn?.ToString("yyyy-MM-dd") ?? "—")
+                                        </td>
+                                        <td style="text-align: center; white-space: nowrap;">
+                                            <button style="background: none; border: none; cursor: pointer; font-size: 1rem; padding: 0.25rem;" title="View Details" @onclick="() => ViewDocument(doc)">👁️</button>
+                                            <button style="background: none; border: none; cursor: pointer; font-size: 1rem; padding: 0.25rem;" title="Edit" @onclick="() => OpenEditDialog(doc)">✏️</button>
+                                            <button style="background: none; border: none; cursor: pointer; font-size: 1rem; padding: 0.25rem;" title="Manage Pages" @onclick="() => OpenPagesDialog(doc)">📑</button>
+                                            <button style="background: none; border: none; cursor: pointer; font-size: 1rem; padding: 0.25rem; color: #ef4444;" title="Delete" @onclick="() => DeleteDocument(doc)">🗑️</button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    <div style="padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="color: #64748b; font-size: 0.875rem;">
+                            Showing @(((currentPage - 1) * pageSize) + 1)–@(Math.Min(currentPage * pageSize, totalCount)) of @totalCount documents
+                        </div>
+                        <div style="display: flex; gap: 0.25rem; align-items: center;">
+                            <button class="lgreeny-btn-secondary" style="padding: 0.375rem 0.75rem; font-size: 0.8rem;" @onclick="FirstPage" disabled="@(currentPage <= 1)">
+                                ⏮
+                            </button>
+                            <button class="lgreeny-btn-secondary" style="padding: 0.375rem 0.75rem; font-size: 0.8rem;" @onclick="PreviousPage" disabled="@(currentPage <= 1)">
+                                ◀ Prev
+                            </button>
+                            @{
+                                var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
+                                var startPage = Math.Max(1, currentPage - 2);
+                                var endPage = Math.Min(totalPages, startPage + 4);
+                                startPage = Math.Max(1, endPage - 4);
+                            }
+                            @for (int pg = startPage; pg <= endPage; pg++)
+                            {
+                                var pageNum = pg;
+                                <button class="@(pageNum == currentPage ? "lgreeny-btn-primary" : "lgreeny-btn-secondary")"
+                                        style="padding: 0.375rem 0.75rem; font-size: 0.8rem; min-width: 2.25rem;"
+                                        @onclick="() => GoToPage(pageNum)">
+                                    @pageNum
+                                </button>
+                            }
+                            <button class="lgreeny-btn-secondary" style="padding: 0.375rem 0.75rem; font-size: 0.8rem;" @onclick="NextPage" disabled="@(currentPage >= totalPages)">
+                                Next ▶
+                            </button>
+                            <button class="lgreeny-btn-secondary" style="padding: 0.375rem 0.75rem; font-size: 0.8rem;" @onclick="LastPage" disabled="@(currentPage >= totalPages)">
+                                ⏭
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+<!-- ============================================ -->
+<!-- VIEW DOCUMENT DETAIL MODAL -->
+<!-- ============================================ -->
+@if (showViewDialog && viewDocument != null)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;" @onclick="CloseViewDialog">
+        <div style="background: white; border-radius: 0.75rem; width: 900px; max-height: 85vh; overflow-y: auto; box-shadow: 0 25px 50px rgba(0,0,0,0.25);" @onclick:stopPropagation>
+            <div style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: white; z-index: 1; border-radius: 0.75rem 0.75rem 0 0;">
+                <h3 style="margin: 0; color: #1e293b; font-size: 1.25rem;">👁️ Document Details — #@viewDocument.DocumentId</h3>
+                <button style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b;" @onclick="CloseViewDialog">✕</button>
+            </div>
+            <div style="padding: 1.5rem;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    @foreach (var field in GetDocumentFieldsForView(viewDocument))
+                    {
+                        <div style="@(field.Wide ? "grid-column: span 2;" : "")">
+                            <label style="display: block; font-size: 0.75rem; color: #64748b; font-weight: 600; text-transform: uppercase; margin-bottom: 0.25rem;">@field.Label</label>
+                            <div style="padding: 0.5rem; background: #f8fafc; border-radius: 0.375rem; font-size: 0.875rem; color: #1e293b; min-height: 2rem; word-break: break-all;">
+                                @(string.IsNullOrEmpty(field.Value) ? "—" : field.Value)
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ============================================ -->
+<!-- CREATE / EDIT DOCUMENT MODAL -->
+<!-- ============================================ -->
+@if (showEditDialog && editDoc != null)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;">
+        <div style="background: white; border-radius: 0.75rem; width: 1000px; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 50px rgba(0,0,0,0.25);">
+            <div style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: white; z-index: 1; border-radius: 0.75rem 0.75rem 0 0;">
+                <h3 style="margin: 0; color: #1e293b; font-size: 1.25rem;">@(isCreating ? "➕ Create New Document" : $"✏️ Edit Document — #{editDoc.DocumentId}")</h3>
+                <button style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b;" @onclick="CloseEditDialog">✕</button>
+            </div>
+
+            <!-- Tabs -->
+            <div style="display: flex; border-bottom: 1px solid #e2e8f0; padding: 0 1.5rem; background: #f8fafc;">
+                <button style="padding: 0.75rem 1.25rem; border: none; background: @(editTab == 0 ? "white" : "transparent"); color: @(editTab == 0 ? "#3b82f6" : "#64748b"); font-weight: @(editTab == 0 ? "600" : "400"); cursor: pointer; border-bottom: 2px solid @(editTab == 0 ? "#3b82f6" : "transparent"); font-size: 0.875rem;" @onclick="() => editTab = 0">
+                    📋 Core Fields
+                </button>
+                <button style="padding: 0.75rem 1.25rem; border: none; background: @(editTab == 1 ? "white" : "transparent"); color: @(editTab == 1 ? "#3b82f6" : "#64748b"); font-weight: @(editTab == 1 ? "600" : "400"); cursor: pointer; border-bottom: 2px solid @(editTab == 1 ? "#3b82f6" : "transparent"); font-size: 0.875rem;" @onclick="() => editTab = 1">
+                    📝 Custom Text
+                </button>
+                <button style="padding: 0.75rem 1.25rem; border: none; background: @(editTab == 2 ? "white" : "transparent"); color: @(editTab == 2 ? "#3b82f6" : "#64748b"); font-weight: @(editTab == 2 ? "600" : "400"); cursor: pointer; border-bottom: 2px solid @(editTab == 2 ? "#3b82f6" : "transparent"); font-size: 0.875rem;" @onclick="() => editTab = 2">
+                    🔢 Custom Fields
+                </button>
+                <button style="padding: 0.75rem 1.25rem; border: none; background: @(editTab == 3 ? "white" : "transparent"); color: @(editTab == 3 ? "#3b82f6" : "#64748b"); font-weight: @(editTab == 3 ? "600" : "400"); cursor: pointer; border-bottom: 2px solid @(editTab == 3 ? "#3b82f6" : "transparent"); font-size: 0.875rem;" @onclick="() => editTab = 3">
+                    🔗 Related IDs
+                </button>
+            </div>
+
+            <div style="padding: 1.5rem;">
+                @if (!string.IsNullOrEmpty(editSuccessMessage))
+                {
+                    <div style="padding: 0.75rem 1rem; background: #dcfce7; border: 1px solid #bbf7d0; border-radius: 0.375rem; color: #166534; margin-bottom: 1rem; font-size: 0.875rem;">
+                        ✅ @editSuccessMessage
+                    </div>
+                }
+                @if (!string.IsNullOrEmpty(editErrorMessage))
+                {
+                    <div style="padding: 0.75rem 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.375rem; color: #991b1b; margin-bottom: 1rem; font-size: 0.875rem;">
+                        ⚠️ @editErrorMessage
+                    </div>
+                }
+
+                <!-- TAB 0: Core Fields -->
+                @if (editTab == 0)
+                {
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div>
+                            <label style="@FieldLabelStyle">Document Number *</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.DocumentNumber" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Title</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Title" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Author</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Author" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Document Date</label>
+                            <input type="date" style="@FieldInputStyle" @bind="editDoc.DocumentDate" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Document Type</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.DocumentType" list="typeList" />
+                            <datalist id="typeList">
+                                @foreach (var t in distinctTypes)
+                                {
+                                    <option value="@t" />
+                                }
+                            </datalist>
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Status</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Status" list="statusList" />
+                            <datalist id="statusList">
+                                @foreach (var s in distinctStatuses)
+                                {
+                                    <option value="@s" />
+                                }
+                            </datalist>
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Classification</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Classification" list="classificationList" />
+                            <datalist id="classificationList">
+                                @foreach (var c in distinctClassifications)
+                                {
+                                    <option value="@c" />
+                                }
+                            </datalist>
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Version</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Version" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Document Index</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.DocumentIndex" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Issue</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Issue" />
+                        </div>
+                        <div style="grid-column: span 2;">
+                            <label style="@FieldLabelStyle">Keywords</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Keywords" placeholder="Comma-separated keywords" />
+                        </div>
+                        <div style="grid-column: span 2;">
+                            <label style="@FieldLabelStyle">Memo / Notes</label>
+                            <textarea style="@FieldInputStyle; height: 80px; resize: vertical;" @bind="editDoc.Memo"></textarea>
+                        </div>
+                        <div style="grid-column: span 2;">
+                            <label style="@FieldLabelStyle">File Path (legacy)</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.FilePath" />
+                        </div>
+                    </div>
+                }
+
+                <!-- TAB 1: Custom Text Fields -->
+                @if (editTab == 1)
+                {
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div>
+                            <label style="@FieldLabelStyle">Text 01</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Text01" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Text 02</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Text02" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Text 03</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Text03" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Text 04</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Text04" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Text 05</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Text05" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Text 06</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Text06" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Text 07</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Text07" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Text 08</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Text08" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Text 09</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Text09" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Text 10</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Text10" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Text 11</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Text11" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Text 12</label>
+                            <input type="text" style="@FieldInputStyle" @bind="editDoc.Text12" />
+                        </div>
+                    </div>
+                }
+
+                <!-- TAB 2: Custom Dates, Booleans, Numbers -->
+                @if (editTab == 2)
+                {
+                    <h4 style="margin: 0 0 1rem; color: #1e293b; font-size: 1rem; font-weight: 600;">📅 Date Fields</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+                        <div>
+                            <label style="@FieldLabelStyle">Date 01</label>
+                            <input type="date" style="@FieldInputStyle" @bind="editDoc.Date01" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Date 02</label>
+                            <input type="date" style="@FieldInputStyle" @bind="editDoc.Date02" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Date 03</label>
+                            <input type="date" style="@FieldInputStyle" @bind="editDoc.Date03" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Date 04</label>
+                            <input type="date" style="@FieldInputStyle" @bind="editDoc.Date04" />
+                        </div>
+                    </div>
+
+                    <h4 style="margin: 0 0 1rem; color: #1e293b; font-size: 1rem; font-weight: 600;">✅ Boolean Fields</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+                        <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; background: #f8fafc; border-radius: 0.375rem; border: 1px solid #e2e8f0;">
+                            <input type="checkbox" id="bool01" @bind="editDoc.Boolean01" style="width: 1.25rem; height: 1.25rem;" />
+                            <label for="bool01" style="color: #1e293b; font-weight: 500; cursor: pointer;">Boolean 01</label>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; background: #f8fafc; border-radius: 0.375rem; border: 1px solid #e2e8f0;">
+                            <input type="checkbox" id="bool02" @bind="editDoc.Boolean02" style="width: 1.25rem; height: 1.25rem;" />
+                            <label for="bool02" style="color: #1e293b; font-weight: 500; cursor: pointer;">Boolean 02</label>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; background: #f8fafc; border-radius: 0.375rem; border: 1px solid #e2e8f0;">
+                            <input type="checkbox" id="bool03" @bind="editDoc.Boolean03" style="width: 1.25rem; height: 1.25rem;" />
+                            <label for="bool03" style="color: #1e293b; font-weight: 500; cursor: pointer;">Boolean 03</label>
+                        </div>
+                    </div>
+
+                    <h4 style="margin: 0 0 1rem; color: #1e293b; font-size: 1rem; font-weight: 600;">🔢 Number Fields</h4>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                        <div>
+                            <label style="@FieldLabelStyle">Number 01</label>
+                            <input type="number" step="any" style="@FieldInputStyle" @bind="editDoc.Number01" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Number 02</label>
+                            <input type="number" step="any" style="@FieldInputStyle" @bind="editDoc.Number02" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">Number 03</label>
+                            <input type="number" step="any" style="@FieldInputStyle" @bind="editDoc.Number03" />
+                        </div>
+                    </div>
+                }
+
+                <!-- TAB 3: Related IDs -->
+                @if (editTab == 3)
+                {
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div>
+                            <label style="@FieldLabelStyle">OldDM</label>
+                            <input type="number" style="@FieldInputStyle" @bind="editDoc.OldDM" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">CM</label>
+                            <input type="number" style="@FieldInputStyle" @bind="editDoc.CM" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">GM</label>
+                            <input type="number" style="@FieldInputStyle" @bind="editDoc.GM" />
+                        </div>
+                        <div>
+                            <label style="@FieldLabelStyle">EM</label>
+                            <input type="number" style="@FieldInputStyle" @bind="editDoc.EM" />
+                        </div>
+                    </div>
+
+                    @if (!isCreating)
+                    {
+                        <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #e2e8f0;">
+                            <h4 style="margin: 0 0 1rem; color: #64748b; font-size: 0.9rem; font-weight: 600;">📊 Audit Info (read-only)</h4>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                                <div>
+                                    <label style="@FieldLabelStyle">Created On</label>
+                                    <div style="padding: 0.5rem; background: #f1f5f9; border-radius: 0.375rem; font-size: 0.875rem; color: #475569;">@editDoc.CreatedOn.ToString("yyyy-MM-dd HH:mm:ss")</div>
+                                </div>
+                                <div>
+                                    <label style="@FieldLabelStyle">Created By</label>
+                                    <div style="padding: 0.5rem; background: #f1f5f9; border-radius: 0.375rem; font-size: 0.875rem; color: #475569;">@editDoc.CreatedBy</div>
+                                </div>
+                                <div>
+                                    <label style="@FieldLabelStyle">Modified On</label>
+                                    <div style="padding: 0.5rem; background: #f1f5f9; border-radius: 0.375rem; font-size: 0.875rem; color: #475569;">@(editDoc.ModifiedOn?.ToString("yyyy-MM-dd HH:mm:ss") ?? "—")</div>
+                                </div>
+                                <div>
+                                    <label style="@FieldLabelStyle">Modified By</label>
+                                    <div style="padding: 0.5rem; background: #f1f5f9; border-radius: 0.375rem; font-size: 0.875rem; color: #475569;">@(editDoc.ModifiedBy?.ToString() ?? "—")</div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+
+            <!-- Save / Cancel -->
+            <div style="padding: 1rem 1.5rem; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 0.5rem; background: #f8fafc; border-radius: 0 0 0.75rem 0.75rem;">
+                <button class="lgreeny-btn-secondary" @onclick="CloseEditDialog" disabled="@isSaving">Cancel</button>
+                <button class="lgreeny-btn-primary" @onclick="SaveDocument" disabled="@isSaving">
+                    @if (isSaving)
+                    {
+                        <span>Saving...</span>
+                    }
+                    else
+                    {
+                        <span>@(isCreating ? "Create Document" : "Save Changes")</span>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- ============================================ -->
+<!-- PAGE MANAGEMENT MODAL -->
+<!-- ============================================ -->
+@if (showPagesDialog && pagesDocument != null)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;">
+        <div style="background: white; border-radius: 0.75rem; width: 950px; max-height: 85vh; overflow-y: auto; box-shadow: 0 25px 50px rgba(0,0,0,0.25);">
+            <div style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: white; z-index: 1; border-radius: 0.75rem 0.75rem 0 0;">
+                <h3 style="margin: 0; color: #1e293b; font-size: 1.25rem;">📑 Pages — @(pagesDocument.Title ?? pagesDocument.DocumentNumber) (#@pagesDocument.DocumentId)</h3>
+                <button style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #64748b;" @onclick="ClosePagesDialog">✕</button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(pagesSuccessMessage))
+            {
+                <div style="margin: 1rem 1.5rem 0; padding: 0.75rem 1rem; background: #dcfce7; border: 1px solid #bbf7d0; border-radius: 0.375rem; color: #166534; font-size: 0.875rem;">
+                    ✅ @pagesSuccessMessage
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(pagesErrorMessage))
+            {
+                <div style="margin: 1rem 1.5rem 0; padding: 0.75rem 1rem; background: #fee2e2; border: 1px solid #fecaca; border-radius: 0.375rem; color: #991b1b; font-size: 0.875rem;">
+                    ⚠️ @pagesErrorMessage
+                </div>
+            }
+
+            <div style="padding: 1.5rem;">
+                <!-- Upload new page -->
+                <div style="padding: 1rem; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 0.5rem; margin-bottom: 1.5rem;">
+                    <h4 style="margin: 0 0 0.75rem; color: #475569; font-size: 0.9rem; font-weight: 600;">➕ Add New Page</h4>
+                    <div style="display: grid; grid-template-columns: 100px 1fr 2fr auto; gap: 0.75rem; align-items: end;">
+                        <div>
+                            <label style="display: block; font-size: 0.75rem; color: #64748b; margin-bottom: 0.25rem;">Page #</label>
+                            <input type="number" min="1" style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" @bind="newPageNumber" />
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.75rem; color: #64748b; margin-bottom: 0.25rem;">Reference</label>
+                            <input type="text" style="width: 100%; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 0.375rem; font-size: 0.875rem;" @bind="newPageReference" placeholder="Optional reference" />
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.75rem; color: #64748b; margin-bottom: 0.25rem;">File (PDF, TIFF, JPEG, PNG, BMP, GIF — max 50MB)</label>
+                            <InputFile OnChange="OnNewPageFileSelected" style="font-size: 0.875rem;" />
+                        </div>
+                        <button class="lgreeny-btn-primary" style="padding: 0.5rem 1rem; white-space: nowrap;" @onclick="UploadNewPage" disabled="@(isUploadingPage || newPageFile == null)">
+                            @(isUploadingPage ? "Uploading..." : "Upload")
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Existing pages list -->
+                @if (isLoadingPages)
+                {
+                    <p style="text-align: center; color: #64748b; padding: 1rem;">Loading pages...</p>
+                }
+                else if (documentPages == null || documentPages.Count == 0)
+                {
+                    <div style="text-align: center; color: #94a3b8; padding: 2rem;">
+                        <div style="font-size: 2rem; margin-bottom: 0.5rem;">📭</div>
+                        <p>No pages found for this document.</p>
+                    </div>
+                }
+                else
+                {
+                    <table class="lgreeny-table" style="margin: 0;">
+                        <thead>
+                            <tr>
+                                <th>Page #</th>
+                                <th>Reference</th>
+                                <th>File Name</th>
+                                <th>Format</th>
+                                <th>Size</th>
+                                <th>Storage</th>
+                                <th>Uploaded</th>
+                                <th>Checksum</th>
+                                <th style="text-align: center;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var pg in documentPages)
+                            {
+                                <tr>
+                                    <td style="font-weight: 600;">@(pg.PageNumber)</td>
+                                    <td style="font-size: 0.875rem; color: #475569;">@(pg.PageReference ?? "—")</td>
+                                    <td style="font-size: 0.8rem; color: #1e293b; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="@(pg.FileName)">@(pg.FileName ?? "—")</td>
+                                    <td style="font-size: 0.8rem; color: #64748b;">@(pg.FileFormat?.ToString() ?? pg.ContentType ?? "—")</td>
+                                    <td style="font-size: 0.8rem; color: #64748b; white-space: nowrap;">@FormatFileSize(pg.FileSize)</td>
+                                    <td>
+                                        @if (pg.StorageType == 1)
+                                        {
+                                            <span style="padding: 0.125rem 0.5rem; background: #dcfce7; color: #166534; border-radius: 0.25rem; font-size: 0.7rem; font-weight: 600;">BLOB</span>
+                                        }
+                                        else
+                                        {
+                                            <span style="padding: 0.125rem 0.5rem; background: #fef3c7; color: #92400e; border-radius: 0.25rem; font-size: 0.7rem; font-weight: 600;">FILE</span>
+                                        }
+                                    </td>
+                                    <td style="font-size: 0.8rem; color: #64748b; white-space: nowrap;">@(pg.UploadedDate?.ToString("yyyy-MM-dd") ?? pg.CreatedOn.ToString("yyyy-MM-dd"))</td>
+                                    <td style="font-size: 0.7rem; color: #94a3b8; font-family: monospace;" title="@(pg.ChecksumMD5)">@Truncate(pg.ChecksumMD5, 12)</td>
+                                    <td style="text-align: center; white-space: nowrap;">
+                                        <button style="background: none; border: none; cursor: pointer; font-size: 0.9rem; padding: 0.25rem; color: #ef4444;" title="Delete Page" @onclick="() => DeletePage(pg)">🗑️</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+    </div>
+}

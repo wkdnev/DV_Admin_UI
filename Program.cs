@@ -5,6 +5,7 @@
 using DV.Admin.UI.Components;
 using DV.Admin.UI.Security;
 using DV.Shared.Security;
+using DV.Shared.Interfaces;
 using DV.Admin.UI.Services;
 using DV.Shared.Models;
 using DV.Admin.UI.Data;
@@ -15,6 +16,7 @@ using DV.Admin.UI.Infrastructure.Validation;
 using DV.Admin.UI.Infrastructure.Configuration;
 using DV.Admin.UI.Infrastructure.Repositories;
 using DV.Admin.UI.Infrastructure.HealthChecks;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authentication.Negotiate;
@@ -128,16 +130,6 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Add session configuration for security
-builder.Services.AddSession(options =>
-{
-    options.IdleTimeout = TimeSpan.FromMinutes(30);
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-    options.Cookie.SameSite = SameSiteMode.Strict;
-    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-});
-
 // ============================================================================
 // Service Configuration
 // ============================================================================
@@ -149,34 +141,14 @@ builder.Services.AddRazorComponents()
 // Cascading auth state for interactive server components (.NET 8 requirement)
 builder.Services.AddCascadingAuthenticationState();
 
-// Register Pooled DbContextFactory for AppDbContext (for Blazor components)
-// This provides both IDbContextFactory<AppDbContext> for factory pattern
-// and scoped AppDbContext instances for dependency injection
-builder.Services.AddPooledDbContextFactory<AppDbContext>(options =>
-{
-    options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
-        sqlOptions => {
-            sqlOptions.EnableRetryOnFailure(maxRetryCount: 5);
-            sqlOptions.CommandTimeout(30);
-        }
-    );
-    
-    if (builder.Environment.IsDevelopment())
-    {
-        options.EnableSensitiveDataLogging();
-        options.EnableDetailedErrors();
-    }
-});
-
 // Register AppDbContext with TRANSIENT lifetime to avoid sharing across concurrent component initialization
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    options.UseSqlServer(
+    options.UseNpgsql(
         builder.Configuration.GetConnectionString("DefaultConnection"),
-        sqlOptions => {
-            sqlOptions.EnableRetryOnFailure(maxRetryCount: 5);
-            sqlOptions.CommandTimeout(30);
+        npgsqlOptions => {
+            npgsqlOptions.EnableRetryOnFailure(maxRetryCount: 5);
+            npgsqlOptions.CommandTimeout(30);
         }
     );
     
@@ -187,34 +159,14 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     }
 }, ServiceLifetime.Transient);  // CRITICAL: Transient lifetime to avoid DbContext sharing
 
-// Register SecurityDbContext factory for pooled context support
-builder.Services.AddPooledDbContextFactory<SecurityDbContext>(options =>
-{
-    options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
-        sqlOptions => {
-            sqlOptions.EnableRetryOnFailure(maxRetryCount: 5);
-            sqlOptions.CommandTimeout(30);
-        }
-    );
-    
-    if (builder.Environment.IsDevelopment())
-    {
-        options.EnableSensitiveDataLogging();
-        options.EnableDetailedErrors();
-    }
-});
-
-// Register SecurityDbContext as scoped - NOTE: Each service gets its own instance per request
-// to avoid concurrency issues
 // Register SecurityDbContext with TRANSIENT lifetime to avoid sharing across concurrent component initialization
 builder.Services.AddDbContext<SecurityDbContext>(options =>
 {
-    options.UseSqlServer(
+    options.UseNpgsql(
         builder.Configuration.GetConnectionString("DefaultConnection"),
-        sqlOptions => {
-            sqlOptions.EnableRetryOnFailure(maxRetryCount: 5);
-            sqlOptions.CommandTimeout(30);
+        npgsqlOptions => {
+            npgsqlOptions.EnableRetryOnFailure(maxRetryCount: 5);
+            npgsqlOptions.CommandTimeout(30);
         }
     );
     
@@ -224,6 +176,10 @@ builder.Services.AddDbContext<SecurityDbContext>(options =>
         options.EnableDetailedErrors();
     }
 }, ServiceLifetime.Transient);  // CRITICAL: Transient lifetime to avoid DbContext sharing
+
+// Register IDbContextFactory<SecurityDbContext> that resolves from the service provider
+builder.Services.AddSingleton<IDbContextFactory<SecurityDbContext>>(sp =>
+    new DV.Admin.UI.Data.SecurityDbContextFactory(sp));
 
 // ============================================================================
 // Application Services
@@ -245,9 +201,12 @@ builder.Services.AddTransient<ProjectRoleService>();  // Transient to avoid DbCo
 // builder.Services.AddTransient<UserProjectAccessService>();
 builder.Services.AddScoped<AuditService>();
 builder.Services.AddScoped<SessionManagementService>();
+builder.Services.AddScoped<NotificationApiService>();
 builder.Services.AddScoped<GlobalAdminMigrationService>();
 builder.Services.AddScoped<ProjectRoleSeeder>();
 builder.Services.AddTransient<FirstUserAdminService>(); // Transient to avoid DbContext sharing during concurrent initialization
+builder.Services.AddTransient<ICredentialService, CredentialService>(); // NIST SP 800-53: Local credential management
+builder.Services.AddTransient<IAccessGroupService, AccessGroupService>(); // App-managed access groups
 
 // ============================================================================
 // Health Checks Configuration
@@ -279,15 +238,24 @@ builder.Services.AddScoped<ApplicationHealthCheck>();
 builder.Services.AddScoped<DV.Admin.UI.Security.TokenProvider>();
 builder.Services.AddScoped<DV.Admin.UI.Security.TokenDelegatingHandler>();
 
-builder.Services.AddHttpClient("Api", client =>
+var apiClientBuilder = builder.Services.AddHttpClient("Api", client =>
 {
     var baseUrl = builder.Configuration["Api:BaseUrl"];
     if (!string.IsNullOrEmpty(baseUrl))
     {
         client.BaseAddress = new Uri(baseUrl);
     }
-})
-.AddHttpMessageHandler<DV.Admin.UI.Security.TokenDelegatingHandler>();
+});
+
+if (builder.Environment.IsDevelopment())
+{
+    apiClientBuilder.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+    });
+}
+
+apiClientBuilder.AddHttpMessageHandler<DV.Admin.UI.Security.TokenDelegatingHandler>();
 
 // ============================================================================
 // Authentication & Authorization
@@ -447,18 +415,28 @@ builder.Services.AddScoped<IAuthorizationHandler, RoleBasedAuthorizationHandler>
 builder.Services.AddScoped<IAuthorizationHandler, GlobalAdminAuthorizationHandler>();
 
 // ============================================================================
-// Session & Background Services
+// Session & Background Services (NIST SP 800-53 AC-12 compliant)
 // ============================================================================
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
-    options.IdleTimeout = TimeSpan.FromHours(2);
+    options.IdleTimeout = TimeSpan.FromMinutes(SessionConfig.IdleTimeoutMinutes);
+    options.Cookie.Name = SessionConfig.CookieName;
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
+    options.Cookie.SameSite = SameSiteMode.Strict;
     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
 });
 
 builder.Services.AddHostedService<SessionCleanupService>();
+
+// ============================================================================
+// Response Compression
+// ============================================================================
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+});
 
 // ============================================================================
 // Web Services
@@ -496,12 +474,49 @@ else
 // CORS (before authentication)
 app.UseCors("DefaultPolicy");
 
+// Response compression (before static files for dynamic content)
+app.UseResponseCompression();
+
 // Security middleware
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 // Authentication & Authorization
 app.UseAuthentication();
+
+// Development: auto-sign-in as dev user, bypassing AD FS
+if (app.Environment.IsDevelopment())
+{
+    app.Use(async (context, next) =>
+    {
+        var path = context.Request.Path.Value ?? "";
+        var isAuthPath = path.StartsWith("/auth/", StringComparison.OrdinalIgnoreCase)
+                      || path.StartsWith("/login-choice", StringComparison.OrdinalIgnoreCase)
+                      || path.StartsWith("/logout", StringComparison.OrdinalIgnoreCase);
+
+        if (context.User.Identity?.IsAuthenticated != true && !isAuthPath)
+        {
+            var claims = new List<Claim>
+            {
+                new Claim("unique_name", @"AD\neil.rainsforth"),
+                new Claim(System.Security.Claims.ClaimTypes.Name, @"AD\neil.rainsforth"),
+                new Claim("role", Roles.GlobalAdminGroup),
+                new Claim("role", Roles.AdminGroup),
+                new Claim("role", Roles.AuditorGroup),
+                new Claim("role", Roles.SecurityGroup),
+                new Claim("groups", Roles.GlobalAdminGroup),
+                new Claim("auth_method", "dev_bypass"),
+            };
+            var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme, "unique_name", "role");
+            var principal = new ClaimsPrincipal(identity);
+
+            await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
+            context.User = principal;
+        }
+        await next();
+    });
+}
+
 app.UseAuthorization();
 
 // Session middleware
@@ -559,6 +574,36 @@ app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthC
 // ============================================================================
 // Application Startup
 // ============================================================================
+try
+{
+    // Schema migration + PublicToken backfill
+    using (var scope = app.Services.CreateScope())
+    {
+        var migrationService = scope.ServiceProvider.GetRequiredService<DatabaseMigrationService>();
+        var logger2 = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        if (await migrationService.CheckIfMigrationNeededAsync())
+        {
+            logger2.LogInformation("Running schema migrations...");
+            await migrationService.ExecuteProjectSchemaMigrationAsync();
+            logger2.LogInformation("Schema migrations completed.");
+        }
+
+        // Migrate per-project schema tables (adds new columns like PublicToken)
+        var schemaService = scope.ServiceProvider.GetRequiredService<SchemaService>();
+        await schemaService.MigrateAllExistingSchemasAsync();
+
+        var repo = scope.ServiceProvider.GetRequiredService<DocumentRepository>();
+        var backfilled = await repo.BackfillDocumentTokensAsync();
+        if (backfilled > 0)
+            logger2.LogInformation("Backfilled PublicToken for {Count} documents.", backfilled);
+    }
+}
+catch (Exception ex)
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogWarning(ex, "Error backfilling PublicTokens.");
+}
+
 try
 {
     var logger = app.Services.GetRequiredService<ILogger<Program>>();

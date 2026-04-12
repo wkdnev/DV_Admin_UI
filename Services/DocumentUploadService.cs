@@ -208,13 +208,13 @@ public class DocumentUploadService
                 {
                     // Find file-based pages in this schema
                     var sql = $@"
-                        SELECT * FROM [{project.SchemaName}].[DocumentPage] 
-                        WHERE (StorageType = 0 OR StorageType IS NULL) 
-                          AND FilePath IS NOT NULL AND FilePath != ''";
+                        SELECT * FROM ""{project.SchemaName}"".""DocumentPage"" 
+                        WHERE (""StorageType"" = 0 OR ""StorageType"" IS NULL) 
+                          AND ""FilePath"" IS NOT NULL AND ""FilePath"" != ''";
 
                     if (documentId.HasValue)
                     {
-                        sql += $" AND DocumentId = {documentId.Value}";
+                        sql += $" AND \"DocumentId\" = {documentId.Value}";
                     }
 
                     var fileBasedPages = await _context.Database.SqlQueryRaw<DocumentPage>(sql).ToListAsync();
@@ -292,7 +292,7 @@ public class DocumentUploadService
         {
             try
             {
-                var sql = $"SELECT * FROM [{project.SchemaName}].[DocumentPage] WHERE PageId = {{0}}";
+                var sql = $"SELECT * FROM \"{project.SchemaName}\".\"DocumentPage\" WHERE \"PageId\" = {{0}}";
                 var page = await _context.Database.SqlQueryRaw<DocumentPage>(sql, pageId).FirstOrDefaultAsync();
                 
                 if (page != null)
@@ -417,39 +417,39 @@ public class DocumentUploadService
     private async Task<int> SaveDocumentPageToSchemaAsync(DocumentPage documentPage, string schemaName)
     {
     var sql = $@"
-            INSERT INTO [{schemaName}].[DocumentPage] 
+            INSERT INTO ""{schemaName}"".""DocumentPage"" 
             (DocumentId, DocumentIndex, PageNumber, PageReference, FileName, FilePath, FileType, 
              FrameNumber, Level1, Level2, Level3, Level4, DiskNumber, FileFormat, PageSize,
              FileContent, FileSize, ContentType, UploadedDate, ChecksumMD5, StorageType, CreatedOn, CreatedBy)
-            OUTPUT INSERTED.PageId
-        VALUES (@DocumentId, @DocumentIndex, @PageNumber, @PageReference, @FileName, @FilePath, @FileType, 
+            VALUES (@DocumentId, @DocumentIndex, @PageNumber, @PageReference, @FileName, @FilePath, @FileType, 
                 @FrameNumber, @Level1, @Level2, @Level3, @Level4, @DiskNumber, @FileFormat, @PageSize,
-                @FileContent, @FileSize, @ContentType, @UploadedDate, @ChecksumMD5, @StorageType, @CreatedOn, @CreatedBy)";
+                @FileContent, @FileSize, @ContentType, @UploadedDate, @ChecksumMD5, @StorageType, @CreatedOn, @CreatedBy)
+            RETURNING ""PageId""";
 
         var pageIds = await _context.Database.SqlQueryRaw<int>(sql,
-            new Microsoft.Data.SqlClient.SqlParameter("@DocumentId", documentPage.DocumentId),
-            new Microsoft.Data.SqlClient.SqlParameter("@DocumentIndex", documentPage.DocumentIndex ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@PageNumber", documentPage.PageNumber),
-            new Microsoft.Data.SqlClient.SqlParameter("@PageReference", documentPage.PageReference ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileName", documentPage.FileName),
-            new Microsoft.Data.SqlClient.SqlParameter("@FilePath", documentPage.FilePath ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileType", documentPage.FileType),
-            new Microsoft.Data.SqlClient.SqlParameter("@FrameNumber", documentPage.FrameNumber ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@Level1", documentPage.Level1 ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@Level2", documentPage.Level2 ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@Level3", documentPage.Level3 ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@Level4", documentPage.Level4 ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@DiskNumber", documentPage.DiskNumber ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileFormat", documentPage.FileFormat ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@PageSize", documentPage.PageSize ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileContent", documentPage.FileContent!),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileSize", documentPage.FileSize!),
-            new Microsoft.Data.SqlClient.SqlParameter("@ContentType", documentPage.ContentType!),
-            new Microsoft.Data.SqlClient.SqlParameter("@UploadedDate", documentPage.UploadedDate!),
-            new Microsoft.Data.SqlClient.SqlParameter("@ChecksumMD5", documentPage.ChecksumMD5!),
-            new Microsoft.Data.SqlClient.SqlParameter("@StorageType", (int)documentPage.StorageType)
-            ,new Microsoft.Data.SqlClient.SqlParameter("@CreatedOn", documentPage.CreatedOn),
-            new Microsoft.Data.SqlClient.SqlParameter("@CreatedBy", documentPage.CreatedBy)
+            new Npgsql.NpgsqlParameter("@DocumentId", documentPage.DocumentId),
+            new Npgsql.NpgsqlParameter("@DocumentIndex", documentPage.DocumentIndex ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@PageNumber", documentPage.PageNumber),
+            new Npgsql.NpgsqlParameter("@PageReference", documentPage.PageReference ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@FileName", documentPage.FileName),
+            new Npgsql.NpgsqlParameter("@FilePath", documentPage.FilePath ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@FileType", documentPage.FileType),
+            new Npgsql.NpgsqlParameter("@FrameNumber", documentPage.FrameNumber ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@Level1", documentPage.Level1 ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@Level2", documentPage.Level2 ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@Level3", documentPage.Level3 ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@Level4", documentPage.Level4 ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@DiskNumber", documentPage.DiskNumber ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@FileFormat", documentPage.FileFormat ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@PageSize", documentPage.PageSize ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@FileContent", documentPage.FileContent!),
+            new Npgsql.NpgsqlParameter("@FileSize", documentPage.FileSize!),
+            new Npgsql.NpgsqlParameter("@ContentType", documentPage.ContentType!),
+            new Npgsql.NpgsqlParameter("@UploadedDate", documentPage.UploadedDate!),
+            new Npgsql.NpgsqlParameter("@ChecksumMD5", documentPage.ChecksumMD5!),
+            new Npgsql.NpgsqlParameter("@StorageType", (object)(int)documentPage.StorageType)
+            ,new Npgsql.NpgsqlParameter("@CreatedOn", documentPage.CreatedOn),
+            new Npgsql.NpgsqlParameter("@CreatedBy", documentPage.CreatedBy)
         ).ToListAsync();
 
         if (!pageIds.Any())
@@ -468,24 +468,25 @@ public class DocumentUploadService
         var documentType = fileExtension.TrimStart('.').ToUpperInvariant();
 
         var sql = $@"
-            INSERT INTO [{schemaName}].[Document] 
-            (ProjectId, DocumentNumber, DocumentType, Title, Author, Status, Keywords, Memo, DocumentIndex, Version, CreatedOn, CreatedBy) 
-            OUTPUT INSERTED.DocumentId
-            VALUES (@ProjectId, @DocumentNumber, @DocumentType, @Title, @Author, @Status, @Keywords, @Memo, @DocumentIndex, @Version, @CreatedOn, @CreatedBy)";
+            INSERT INTO ""{schemaName}"".""Document"" 
+            (ProjectId, DocumentNumber, DocumentType, Title, Author, Status, Keywords, Memo, DocumentIndex, Version, PublicToken, CreatedOn, CreatedBy) 
+            VALUES (@ProjectId, @DocumentNumber, @DocumentType, @Title, @Author, @Status, @Keywords, @Memo, @DocumentIndex, @Version, @PublicToken, @CreatedOn, @CreatedBy)
+            RETURNING ""DocumentId""";
 
         var documentIds = await _context.Database.SqlQueryRaw<int>(sql,
-            new Microsoft.Data.SqlClient.SqlParameter("@ProjectId", projectId),
-            new Microsoft.Data.SqlClient.SqlParameter("@DocumentNumber", documentNumber),
-            new Microsoft.Data.SqlClient.SqlParameter("@DocumentType", documentType),
-            new Microsoft.Data.SqlClient.SqlParameter("@Title", title ?? Path.GetFileNameWithoutExtension(fileName)),
-            new Microsoft.Data.SqlClient.SqlParameter("@Author", author ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@Status", status),
-            new Microsoft.Data.SqlClient.SqlParameter("@Keywords", keywords ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@Memo", memo ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@DocumentIndex", documentIndex ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@Version", version ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@CreatedOn", DateTime.UtcNow),
-            new Microsoft.Data.SqlClient.SqlParameter("@CreatedBy", createdBy)
+            new Npgsql.NpgsqlParameter("@ProjectId", projectId),
+            new Npgsql.NpgsqlParameter("@DocumentNumber", documentNumber),
+            new Npgsql.NpgsqlParameter("@DocumentType", documentType),
+            new Npgsql.NpgsqlParameter("@Title", title ?? Path.GetFileNameWithoutExtension(fileName)),
+            new Npgsql.NpgsqlParameter("@Author", author ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@Status", status),
+            new Npgsql.NpgsqlParameter("@Keywords", keywords ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@Memo", memo ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@DocumentIndex", documentIndex ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@Version", version ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@PublicToken", DV.Shared.Constants.DocumentTokenGenerator.GenerateToken()),
+            new Npgsql.NpgsqlParameter("@CreatedOn", DateTime.UtcNow),
+            new Npgsql.NpgsqlParameter("@CreatedBy", createdBy)
         ).ToListAsync();
 
         if (!documentIds.Any())
@@ -500,10 +501,10 @@ public class DocumentUploadService
     private async Task<int> InsertFilePathPageToSchemaAsync(int documentId, string documentIndex, int pageNumber, string fileName, string filePath, string fileType, int createdBy, string schemaName, DocumentPageMetadata? metadata = null)
     {
         var sql = $@"
-            INSERT INTO [{schemaName}].[DocumentPage] 
+            INSERT INTO ""{schemaName}"".""DocumentPage"" 
             (DocumentId, DocumentIndex, PageNumber, FileName, FilePath, FileType, FrameNumber, Level1, Level2, Level3, Level4, DiskNumber, FileFormat, PageSize, FileSize, ContentType, ChecksumMD5, UploadedDate, CreatedOn, CreatedBy, StorageType)
-            OUTPUT INSERTED.PageId
-            VALUES (@DocumentId, @DocumentIndex, @PageNumber, @FileName, @FilePath, @FileType, @FrameNumber, @Level1, @Level2, @Level3, @Level4, @DiskNumber, @FileFormat, @PageSize, @FileSize, @ContentType, @ChecksumMD5, @UploadedDate, @CreatedOn, @CreatedBy, @StorageType)";
+            VALUES (@DocumentId, @DocumentIndex, @PageNumber, @FileName, @FilePath, @FileType, @FrameNumber, @Level1, @Level2, @Level3, @Level4, @DiskNumber, @FileFormat, @PageSize, @FileSize, @ContentType, @ChecksumMD5, @UploadedDate, @CreatedOn, @CreatedBy, @StorageType)
+            RETURNING ""PageId""";
 
         // Prepare file metadata if the file exists
         long? fileSize = null;
@@ -525,27 +526,27 @@ public class DocumentUploadService
         }
 
         var pageIds = await _context.Database.SqlQueryRaw<int>(sql,
-            new Microsoft.Data.SqlClient.SqlParameter("@DocumentId", documentId),
-            new Microsoft.Data.SqlClient.SqlParameter("@DocumentIndex", documentIndex ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@PageNumber", pageNumber),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileName", fileName),
-            new Microsoft.Data.SqlClient.SqlParameter("@FilePath", filePath ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileType", fileType),
-            new Microsoft.Data.SqlClient.SqlParameter("@FrameNumber", metadata?.FrameNumber ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@Level1", metadata?.Level1 ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@Level2", metadata?.Level2 ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@Level3", metadata?.Level3 ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@Level4", metadata?.Level4 ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@DiskNumber", metadata?.DiskNumber ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileFormat", metadata?.FileFormat ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@PageSize", metadata?.PageSize ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileSize", fileSize ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@ContentType", contentType ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@ChecksumMD5", checksum ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@UploadedDate", DateTime.UtcNow),
-            new Microsoft.Data.SqlClient.SqlParameter("@CreatedOn", DateTime.UtcNow),
-            new Microsoft.Data.SqlClient.SqlParameter("@CreatedBy", createdBy),
-            new Microsoft.Data.SqlClient.SqlParameter("@StorageType", (int)DocumentStorageType.FilePath)
+            new Npgsql.NpgsqlParameter("@DocumentId", documentId),
+            new Npgsql.NpgsqlParameter("@DocumentIndex", documentIndex ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@PageNumber", pageNumber),
+            new Npgsql.NpgsqlParameter("@FileName", fileName),
+            new Npgsql.NpgsqlParameter("@FilePath", filePath ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@FileType", fileType),
+            new Npgsql.NpgsqlParameter("@FrameNumber", metadata?.FrameNumber ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@Level1", metadata?.Level1 ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@Level2", metadata?.Level2 ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@Level3", metadata?.Level3 ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@Level4", metadata?.Level4 ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@DiskNumber", metadata?.DiskNumber ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@FileFormat", metadata?.FileFormat ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@PageSize", metadata?.PageSize ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@FileSize", fileSize ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@ContentType", contentType ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@ChecksumMD5", checksum ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@UploadedDate", DateTime.UtcNow),
+            new Npgsql.NpgsqlParameter("@CreatedOn", DateTime.UtcNow),
+            new Npgsql.NpgsqlParameter("@CreatedBy", createdBy),
+            new Npgsql.NpgsqlParameter("@StorageType", (object)(int)DocumentStorageType.FilePath)
         ).ToListAsync();
 
         if (!pageIds.Any())
@@ -579,7 +580,7 @@ public class DocumentUploadService
         {
             try
             {
-                var sql = $"SELECT COUNT(*) FROM [{project.SchemaName}].[Document] WHERE DocumentId = {{0}}";
+                var sql = $"SELECT COUNT(*) FROM \"{project.SchemaName}\".\"Document\" WHERE \"DocumentId\" = {{0}}";
                 var counts = await _context.Database.SqlQueryRaw<int>(sql, documentId).ToListAsync();
                 var count = counts.FirstOrDefault();
                 if (count > 0)
@@ -603,7 +604,7 @@ public class DocumentUploadService
     private async Task SaveDocumentPageToSchemaWithoutIdAsync(DocumentPage documentPage, string schemaName)
     {
     var sql = $@"
-        INSERT INTO [{schemaName}].[DocumentPage] (DocumentId, DocumentIndex, PageNumber, PageReference, FileName, FilePath, FileType, 
+        INSERT INTO ""{schemaName}"".""DocumentPage"" (DocumentId, DocumentIndex, PageNumber, PageReference, FileName, FilePath, FileType, 
                     FrameNumber, Level1, Level2, Level3, Level4, DiskNumber, FileFormat, PageSize,
                     FileContent, FileSize, ContentType, UploadedDate, ChecksumMD5, StorageType, CreatedOn, CreatedBy)
         VALUES (@DocumentId, @DocumentIndex, @PageNumber, @PageReference, @FileName, @FilePath, @FileType, 
@@ -611,29 +612,29 @@ public class DocumentUploadService
             @FileContent, @FileSize, @ContentType, @UploadedDate, @ChecksumMD5, @StorageType, @CreatedOn, @CreatedBy)";
 
         await _context.Database.ExecuteSqlRawAsync(sql,
-            new Microsoft.Data.SqlClient.SqlParameter("@DocumentId", documentPage.DocumentId),
-            new Microsoft.Data.SqlClient.SqlParameter("@DocumentIndex", documentPage.DocumentIndex ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@PageNumber", documentPage.PageNumber),
-            new Microsoft.Data.SqlClient.SqlParameter("@PageReference", documentPage.PageReference ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileName", documentPage.FileName),
-            new Microsoft.Data.SqlClient.SqlParameter("@FilePath", documentPage.FilePath),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileType", documentPage.FileType),
-            new Microsoft.Data.SqlClient.SqlParameter("@FrameNumber", documentPage.FrameNumber ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@Level1", documentPage.Level1 ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@Level2", documentPage.Level2 ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@Level3", documentPage.Level3 ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@Level4", documentPage.Level4 ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@DiskNumber", documentPage.DiskNumber ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileFormat", documentPage.FileFormat ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@PageSize", documentPage.PageSize ?? (object)DBNull.Value),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileContent", documentPage.FileContent!),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileSize", documentPage.FileSize!),
-            new Microsoft.Data.SqlClient.SqlParameter("@ContentType", documentPage.ContentType!),
-            new Microsoft.Data.SqlClient.SqlParameter("@UploadedDate", documentPage.UploadedDate!),
-            new Microsoft.Data.SqlClient.SqlParameter("@ChecksumMD5", documentPage.ChecksumMD5!),
-            new Microsoft.Data.SqlClient.SqlParameter("@StorageType", (int)documentPage.StorageType)
-            ,new Microsoft.Data.SqlClient.SqlParameter("@CreatedOn", documentPage.CreatedOn),
-            new Microsoft.Data.SqlClient.SqlParameter("@CreatedBy", documentPage.CreatedBy)
+            new Npgsql.NpgsqlParameter("@DocumentId", documentPage.DocumentId),
+            new Npgsql.NpgsqlParameter("@DocumentIndex", documentPage.DocumentIndex ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@PageNumber", documentPage.PageNumber),
+            new Npgsql.NpgsqlParameter("@PageReference", documentPage.PageReference ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@FileName", documentPage.FileName),
+            new Npgsql.NpgsqlParameter("@FilePath", documentPage.FilePath),
+            new Npgsql.NpgsqlParameter("@FileType", documentPage.FileType),
+            new Npgsql.NpgsqlParameter("@FrameNumber", documentPage.FrameNumber ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@Level1", documentPage.Level1 ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@Level2", documentPage.Level2 ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@Level3", documentPage.Level3 ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@Level4", documentPage.Level4 ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@DiskNumber", documentPage.DiskNumber ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@FileFormat", documentPage.FileFormat ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@PageSize", documentPage.PageSize ?? (object)DBNull.Value),
+            new Npgsql.NpgsqlParameter("@FileContent", documentPage.FileContent!),
+            new Npgsql.NpgsqlParameter("@FileSize", documentPage.FileSize!),
+            new Npgsql.NpgsqlParameter("@ContentType", documentPage.ContentType!),
+            new Npgsql.NpgsqlParameter("@UploadedDate", documentPage.UploadedDate!),
+            new Npgsql.NpgsqlParameter("@ChecksumMD5", documentPage.ChecksumMD5!),
+            new Npgsql.NpgsqlParameter("@StorageType", (object)(int)documentPage.StorageType)
+            ,new Npgsql.NpgsqlParameter("@CreatedOn", documentPage.CreatedOn),
+            new Npgsql.NpgsqlParameter("@CreatedBy", documentPage.CreatedBy)
         );
     }
 
@@ -643,23 +644,23 @@ public class DocumentUploadService
     private async Task UpdateDocumentPageToBlobInSchemaAsync(int pageId, byte[] fileContent, string contentType, string checksumMD5, string schemaName)
     {
         var sql = $@"
-            UPDATE [{schemaName}].[DocumentPage] 
-            SET FileContent = @FileContent, 
-                FileSize = @FileSize, 
-                ContentType = @ContentType, 
-                UploadedDate = @UploadedDate, 
-                ChecksumMD5 = @ChecksumMD5, 
-                StorageType = @StorageType
-            WHERE PageId = @PageId";
+            UPDATE ""{schemaName}"".""DocumentPage"" 
+            SET ""FileContent"" = @FileContent, 
+                ""FileSize"" = @FileSize, 
+                ""ContentType"" = @ContentType, 
+                ""UploadedDate"" = @UploadedDate, 
+                ""ChecksumMD5"" = @ChecksumMD5, 
+                ""StorageType"" = @StorageType
+            WHERE ""PageId"" = @PageId";
 
         await _context.Database.ExecuteSqlRawAsync(sql,
-            new Microsoft.Data.SqlClient.SqlParameter("@PageId", pageId),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileContent", fileContent),
-            new Microsoft.Data.SqlClient.SqlParameter("@FileSize", fileContent.Length),
-            new Microsoft.Data.SqlClient.SqlParameter("@ContentType", contentType),
-            new Microsoft.Data.SqlClient.SqlParameter("@UploadedDate", DateTime.UtcNow),
-            new Microsoft.Data.SqlClient.SqlParameter("@ChecksumMD5", checksumMD5),
-            new Microsoft.Data.SqlClient.SqlParameter("@StorageType", (int)DocumentStorageType.Blob)
+            new Npgsql.NpgsqlParameter("@PageId", pageId),
+            new Npgsql.NpgsqlParameter("@FileContent", fileContent),
+            new Npgsql.NpgsqlParameter("@FileSize", fileContent.Length),
+            new Npgsql.NpgsqlParameter("@ContentType", contentType),
+            new Npgsql.NpgsqlParameter("@UploadedDate", DateTime.UtcNow),
+            new Npgsql.NpgsqlParameter("@ChecksumMD5", checksumMD5),
+            new Npgsql.NpgsqlParameter("@StorageType", (object)(int)DocumentStorageType.Blob)
         );
     }
 

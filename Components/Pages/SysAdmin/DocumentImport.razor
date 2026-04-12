@@ -915,9 +915,9 @@
 
     private void ViewDocument(Document doc)
     {
-        if (selectedProject != null)
+        if (selectedProject != null && !string.IsNullOrEmpty(doc.PublicToken))
         {
-            Navigation.NavigateTo($"/viewdoc/DefaultConnection/{doc.DocumentId}");
+            Navigation.NavigateTo($"/viewdoc/{doc.PublicToken}");
         }
     }
 

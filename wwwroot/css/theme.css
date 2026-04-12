@@ -1,0 +1,582 @@
+/* ================================================================
+   Theme System – CSS Custom Properties (Admin UI)
+   Default: Dark  |  Override: [data-theme="light"]
+   ================================================================ */
+
+:root {
+    color-scheme: dark;
+
+    /* Backgrounds */
+    --bg-body: #0f1117;
+    --bg-surface: #161b22;
+    --bg-input: #0d1117;
+    --bg-inset: rgba(0,0,0,0.2);
+    --bg-inset-deep: rgba(0,0,0,0.3);
+
+    /* Borders */
+    --border: #21262d;
+    --border-muted: #30363d;
+
+    /* Text */
+    --text: #c9d1d9;
+    --text-bright: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #484f58;
+
+    /* Accent – Blue */
+    --accent: #58a6ff;
+    --accent-hover: #79b8ff;
+    --accent-bg-subtle: rgba(88,166,255,0.04);
+    --accent-bg: rgba(88,166,255,0.08);
+    --accent-bg-10: rgba(88,166,255,0.1);
+    --accent-bg-15: rgba(88,166,255,0.15);
+    --accent-ring: rgba(88,166,255,0.5);
+
+    /* Green */
+    --green: #238636;
+    --green-hover: #2ea043;
+    --green-bright: #3fb950;
+
+    /* Red */
+    --red: #f85149;
+
+    /* Gold */
+    --gold: #d29922;
+    --gold-bright: #e3b341;
+
+    /* Sign-out accent */
+    --signout: #fbbf24;
+
+    /* Dashboard overrides */
+    --dash-card-bg: #161b22;
+    --dash-card-border: #21262d;
+    --dash-card-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    --dash-hover-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    --dash-section-bg: #0f1117;
+    --dash-table-header-bg: #161b22;
+    --dash-table-row-hover: rgba(255,255,255,0.03);
+    --dash-table-border: #21262d;
+    --dash-empty-bg: #161b22;
+    --dash-empty-border: #21262d;
+    --dash-header-gradient: linear-gradient(135deg, #6d28d9 0%, #5b21b6 100%);
+    --dash-link: #58a6ff;
+    --dash-link-hover: #79b8ff;
+}
+
+[data-theme="light"] {
+    color-scheme: light;
+
+    /* Backgrounds */
+    --bg-body: #f8f9fa;
+    --bg-surface: #ffffff;
+    --bg-input: #ffffff;
+    --bg-inset: rgba(0,0,0,0.03);
+    --bg-inset-deep: rgba(0,0,0,0.05);
+
+    /* Borders */
+    --border: #e5e7eb;
+    --border-muted: #d1d5db;
+
+    /* Text */
+    --text: #1f2937;
+    --text-bright: #111827;
+    --text-secondary: #6b7280;
+    --text-muted: #9ca3af;
+
+    /* Accent – Blue */
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --accent-bg-subtle: rgba(37,99,235,0.04);
+    --accent-bg: rgba(37,99,235,0.08);
+    --accent-bg-10: rgba(37,99,235,0.1);
+    --accent-bg-15: rgba(37,99,235,0.15);
+    --accent-ring: rgba(37,99,235,0.5);
+
+    /* Green */
+    --green: #16a34a;
+    --green-hover: #15803d;
+    --green-bright: #22c55e;
+
+    /* Red */
+    --red: #dc2626;
+
+    /* Gold */
+    --gold: #d97706;
+    --gold-bright: #b45309;
+
+    /* Sign-out accent */
+    --signout: #d97706;
+
+    /* Dashboard overrides */
+    --dash-card-bg: #ffffff;
+    --dash-card-border: #e5e7eb;
+    --dash-card-shadow: 0 2px 4px rgba(0,0,0,0.06);
+    --dash-hover-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    --dash-section-bg: #f8f9fa;
+    --dash-table-header-bg: #f9fafb;
+    --dash-table-row-hover: #f9fafb;
+    --dash-table-border: #e5e7eb;
+    --dash-empty-bg: #f9fafb;
+    --dash-empty-border: #e5e7eb;
+    --dash-header-gradient: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    --dash-link: #2563eb;
+    --dash-link-hover: #1d4ed8;
+}
+
+/* ================================================================
+   Theme Toggle Button (sits in header)
+   ================================================================ */
+.theme-toggle-btn {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.2);
+    color: rgba(255,255,255,0.85);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+.theme-toggle-btn:hover {
+    background: rgba(255,255,255,0.15);
+    color: white;
+    border-color: rgba(255,255,255,0.3);
+}
+
+/* ================================================================
+   Admin UI Theme Bridge
+   Overrides hardcoded colors in app.css with CSS variables
+   ================================================================ */
+
+/* Base page */
+html, body {
+    color: var(--text) !important;
+    background: var(--bg-body) !important;
+}
+
+main {
+    background: var(--bg-body) !important;
+}
+
+.content {
+    background: var(--bg-body);
+}
+
+/* Dashboard container */
+.dashboard-container {
+    background: var(--bg-body);
+}
+
+/* Stat cards */
+.stat-card {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+    box-shadow: var(--dash-card-shadow);
+}
+.stat-card:hover {
+    box-shadow: var(--dash-hover-shadow);
+}
+.stat-value {
+    color: var(--text-bright);
+}
+.stat-label {
+    color: var(--text-secondary);
+}
+.stat-detail {
+    color: var(--text-muted);
+}
+
+/* Section cards */
+.section-card {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+}
+.subsection-title {
+    color: var(--text-bright);
+    border-top-color: var(--border);
+}
+
+/* Family cards */
+.family-card {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+}
+.family-code {
+    color: var(--text-bright);
+}
+.family-name {
+    color: var(--text);
+}
+.family-stats {
+    color: var(--text-secondary);
+}
+.family-count {
+    background: var(--accent-bg-15);
+    color: var(--accent);
+}
+
+/* Data tables */
+.data-table {
+    background: var(--dash-card-bg);
+}
+.data-table thead tr {
+    background: var(--dash-table-header-bg);
+    border-bottom-color: var(--dash-table-border);
+}
+.data-table th {
+    color: var(--text-secondary);
+    border-top-color: var(--dash-table-border);
+}
+.data-table tbody tr {
+    border-bottom-color: var(--dash-table-border);
+}
+.data-table tbody tr:hover {
+    background: var(--dash-table-row-hover);
+}
+.data-table td {
+    color: var(--text);
+}
+
+/* Table footer */
+.table-footer {
+    background: var(--dash-section-bg);
+}
+.table-footer p {
+    color: var(--text-secondary);
+}
+
+/* Loading / empty states */
+.loading-state {
+    background: var(--dash-card-bg);
+    box-shadow: var(--dash-card-shadow);
+}
+.loading-state p {
+    color: var(--text-secondary);
+}
+.empty-state-inline {
+    background: var(--dash-empty-bg);
+    border-color: var(--dash-empty-border);
+}
+.empty-state-inline p {
+    color: var(--text-secondary);
+}
+
+/* Page header */
+.page-header {
+    background: transparent;
+}
+.header-content h1 {
+    color: var(--text-bright);
+}
+.header-content p {
+    color: var(--text-secondary);
+}
+
+/* Top row (css/app.css) */
+.top-row {
+    background: var(--bg-surface);
+    border-bottom-color: var(--border);
+}
+.top-row a {
+    color: var(--accent);
+}
+.user-name {
+    color: var(--text-secondary);
+}
+
+/* Forms and inputs */
+input[type="text"],
+input[type="number"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="date"],
+textarea,
+select,
+.form-control,
+.form-select {
+    background-color: var(--bg-input);
+    color: var(--text);
+    border-color: var(--border);
+}
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 0.2rem var(--accent-ring);
+}
+.form-label {
+    color: var(--text);
+}
+
+/* Modal / dialog overrides */
+.modal-content {
+    background-color: var(--bg-surface);
+    color: var(--text);
+    border-color: var(--border);
+}
+.modal-header {
+    border-bottom-color: var(--border);
+}
+.modal-footer {
+    border-top-color: var(--border);
+}
+
+/* Card generic */
+.card {
+    background-color: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+    color: var(--text);
+}
+.card-header {
+    border-bottom-color: var(--border);
+}
+.card-footer {
+    border-top-color: var(--border);
+}
+
+/* Alerts */
+.alert {
+    color: var(--text);
+}
+
+/* Links */
+a {
+    color: var(--accent);
+}
+a:hover {
+    color: var(--accent-hover);
+}
+
+/* Risk items */
+.risk-item {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+}
+
+/* Progress items */
+.progress-item {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+}
+
+/* Enterprise list / table */
+.enterprise-list-container {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+}
+.enterprise-table thead {
+    background: var(--dash-table-header-bg);
+}
+.enterprise-table th {
+    color: var(--text-secondary);
+}
+.enterprise-table td {
+    color: var(--text);
+    border-bottom-color: var(--dash-table-border);
+}
+.enterprise-table tbody tr:hover {
+    background: var(--dash-table-row-hover);
+}
+
+/* Empty state */
+.empty-state {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+}
+.empty-state h5 {
+    color: var(--text-bright);
+}
+.empty-state p {
+    color: var(--text-secondary);
+}
+
+/* Text muted override */
+.text-muted {
+    color: var(--text-secondary) !important;
+}
+
+/* Action buttons */
+.action-icon-btn {
+    border-color: var(--border);
+    color: var(--text-secondary);
+}
+.action-icon-btn:hover {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* Refresh button */
+.btn-refresh {
+    border-color: var(--border);
+    color: var(--accent);
+}
+.btn-refresh:hover {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+}
+
+/* ================================================================
+   lgreeny Dashboard Theme Bridge
+   ================================================================ */
+.lgreeny-dashboard {
+    background: var(--bg-body);
+    color: var(--text);
+}
+
+.lgreeny-tab {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+    color: var(--text-secondary);
+}
+.lgreeny-tab:hover {
+    background: var(--dash-table-row-hover);
+    border-color: var(--border-muted);
+}
+
+.lgreeny-layout-toggle {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+}
+.layout-label {
+    color: var(--text-muted);
+}
+.layout-btn {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+    color: var(--text-secondary);
+}
+
+.lgreeny-stat-card {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+    box-shadow: var(--dash-card-shadow);
+}
+
+.lgreeny-chart-card {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+    box-shadow: var(--dash-card-shadow);
+}
+.chart-title {
+    color: var(--text-bright);
+}
+.chart-tab {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+    color: var(--text-secondary);
+}
+.chart-footer {
+    border-top-color: var(--border);
+}
+.chart-stat-label {
+    color: var(--text-muted);
+}
+.chart-stat-value {
+    color: var(--text-bright);
+}
+.chart-label {
+    color: var(--text-muted);
+}
+
+.lgreeny-panel,
+.lgreeny-panel-sm,
+.lgreeny-panel-wide {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+    box-shadow: var(--dash-card-shadow);
+}
+
+.lgreeny-table thead {
+    background: var(--dash-table-header-bg);
+    border-bottom-color: var(--dash-table-border);
+}
+.lgreeny-table th {
+    color: var(--text-secondary);
+}
+.lgreeny-table td {
+    color: var(--text);
+    border-bottom-color: var(--border);
+}
+.lgreeny-table tbody tr:hover {
+    background: var(--dash-table-row-hover);
+}
+
+.table-info {
+    color: var(--text-secondary);
+}
+.table-controls {
+    color: var(--text-secondary);
+}
+.table-select,
+.table-search {
+    border-color: var(--border);
+    background: var(--bg-input);
+    color: var(--text);
+}
+
+.pagination-btn {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+    color: var(--text);
+}
+.pagination-btn:hover:not(:disabled) {
+    background: var(--dash-table-row-hover);
+}
+
+.earning-icon {
+    background: var(--bg-inset);
+}
+.earning-label {
+    color: var(--text-muted);
+}
+.earning-value {
+    color: var(--text-bright);
+}
+.earning-spinner::before {
+    background: var(--dash-card-bg);
+}
+.spinner-value {
+    color: var(--text-bright);
+}
+
+.legend-item strong {
+    color: var(--text-bright);
+}
+
+/* Chat panel */
+.lgreeny-chat-panel {
+    background: var(--dash-card-bg);
+    border-color: var(--dash-card-border);
+}
+.chat-avatar {
+    background: var(--bg-inset);
+}
+.message-text {
+    background: var(--bg-inset);
+    color: var(--text);
+}
+.message-time {
+    color: var(--text-muted);
+}
+.chat-divider::before {
+    background: var(--border);
+}
+.chat-divider span {
+    background: var(--dash-card-bg);
+    color: var(--text-muted);
+}
+.chat-footer {
+    border-top-color: var(--border);
+}
+.chat-input {
+    border-color: var(--border);
+    background: var(--bg-input);
+    color: var(--text);
+}
+.table-footer {
+    border-top-color: var(--border);
+}
