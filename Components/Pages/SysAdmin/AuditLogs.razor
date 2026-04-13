@@ -250,8 +250,8 @@
     private string? errorMessage;
 
     // Filter parameters
-    private DateTime? fromDate = DateTime.Today.AddDays(-7); // Default to last 7 days
-    private DateTime? toDate = DateTime.Today.AddDays(1);
+    private DateTime? fromDate = DateTime.UtcNow.Date.AddDays(-7); // Default to last 7 days
+    private DateTime? toDate = DateTime.UtcNow.Date.AddDays(1);
     private string? selectedEventType;
     private string? selectedResult;
     private string? usernameFilter;
@@ -308,8 +308,8 @@
 
     private async Task ClearFilters()
     {
-        fromDate = DateTime.Today.AddDays(-7);
-        toDate = DateTime.Today.AddDays(1);
+        fromDate = DateTime.UtcNow.Date.AddDays(-7);
+        toDate = DateTime.UtcNow.Date.AddDays(1);
         selectedEventType = null;
         selectedResult = null;
         usernameFilter = null;

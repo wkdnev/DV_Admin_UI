@@ -13,6 +13,11 @@ namespace DV.Admin.UI.Services;
 /// </summary>
 public class AuditService
 {
+    /// <summary>
+    /// NIST SP 800-53 AU-3(c): Identifies this application component as the source.
+    /// </summary>
+    private const string SourceComponentName = "DV.Admin.UI";
+
     private readonly SecurityDbContext _securityContext;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILogger<AuditService> _logger;
@@ -277,12 +282,46 @@ public class AuditService
     }
 
     /// <summary>
+    /// Logs credential change events (NIST AU-2: password changes)
+    /// </summary>
+    public async Task LogCredentialChangeAsync(
+        string username,
+        int? userId,
+        string action,
+        string result,
+        string? targetUsername = null,
+        int? targetUserId = null,
+        string? details = null)
+    {
+        var metadata = targetUsername != null ? JsonSerializer.Serialize(new
+        {
+            TargetUsername = targetUsername,
+            TargetUserId = targetUserId
+        }) : null;
+
+        await LogEventAsync(new AuditLog
+        {
+            EventType = AuditEventTypes.CredentialChange,
+            Action = action,
+            Username = username,
+            UserId = userId,
+            ResourceId = targetUsername,
+            Result = result,
+            Details = details,
+            Metadata = metadata
+        });
+    }
+
+    /// <summary>
     /// Core method to log audit events with NIST SP 800-53 AU-9(3) hash chaining
     /// </summary>
     public async Task LogEventAsync(AuditLog auditLog)
     {
         try
         {
+            // NIST SP 800-53 AU-3(c): Set source component ("where")
+            auditLog.SourceComponent ??= SourceComponentName;
+
             _logger.LogInformation("AUDIT DEBUG: Attempting to log audit event: {EventType}.{Action} for user {Username}", 
                 auditLog.EventType, auditLog.Action, auditLog.Username);
 
@@ -328,11 +367,13 @@ public class AuditService
         }
         catch (Exception ex)
         {
-            // Audit logging should never break the application
-            _logger.LogError(ex, "AUDIT ERROR: Failed to write audit log for {EventType}.{Action} by {Username}. Error: {ErrorMessage}",
-                auditLog.EventType, auditLog.Action, auditLog.Username, ex.Message);
+            // NIST SP 800-53 AU-5: Response to audit logging process failures
+            // Alert via CRITICAL log level — must be routed to ops alerting
+            _logger.LogCritical(ex, "AUDIT FAILURE [AU-5]: Failed to write audit log for {EventType}.{Action} by {Username}. " +
+                "SOURCE={SourceComponent}. This is a NIST SP 800-53 AU-5 audit logging process failure. Error: {ErrorMessage}",
+                auditLog.EventType, auditLog.Action, auditLog.Username, auditLog.SourceComponent, ex.Message);
             
-            _logger.LogError("AUDIT ERROR: Failed audit log details: EventType={EventType}, Action={Action}, Username={Username}, Result={Result}, Details={Details}",
+            _logger.LogCritical("AUDIT FAILURE [AU-5]: Failed audit details: EventType={EventType}, Action={Action}, Username={Username}, Result={Result}, Details={Details}",
                 auditLog.EventType, auditLog.Action, auditLog.Username, auditLog.Result, auditLog.Details);
         }
     }

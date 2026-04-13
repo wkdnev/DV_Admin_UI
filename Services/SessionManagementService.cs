@@ -139,7 +139,7 @@ public class SessionManagementService : ISessionManagementService
             await _auditService.LogEventAsync(new AuditLog
             {
                 EventType = AuditEventTypes.Authentication,
-                Action = "SessionCreated",
+                Action = AuditActions.SessionCreated,
                 Username = username,
                 UserId = userId,
                 Result = AuditResults.Success,
@@ -246,7 +246,7 @@ public class SessionManagementService : ISessionManagementService
             await _auditService.LogEventAsync(new AuditLog
             {
                 EventType = AuditEventTypes.Authentication,
-                Action = "RoleSwitch",
+                Action = AuditActions.RoleSwitch,
                 Username = session.Username,
                 UserId = session.UserId,
                 Result = AuditResults.Success,
@@ -290,7 +290,7 @@ public class SessionManagementService : ISessionManagementService
             await _auditService.LogEventAsync(new AuditLog
             {
                 EventType = AuditEventTypes.Authentication,
-                Action = "RoleSwitch",
+                Action = AuditActions.RoleSwitch,
                 Username = session.Username,
                 UserId = session.UserId,
                 Result = AuditResults.Success,
@@ -329,7 +329,7 @@ public class SessionManagementService : ISessionManagementService
             await _auditService.LogEventAsync(new AuditLog
             {
                 EventType = isAdminTermination ? AuditEventTypes.SystemAdmin : AuditEventTypes.Authentication,
-                Action = isAdminTermination ? "AdminSessionTermination" : "Logout",
+                Action = isAdminTermination ? AuditActions.AdminSessionTermination : AuditActions.Logout,
                 Username = session.Username,
                 UserId = session.UserId,
                 Result = AuditResults.Success,

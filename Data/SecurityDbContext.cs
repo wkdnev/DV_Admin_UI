@@ -131,6 +131,7 @@ public class SecurityDbContext : DbContext
             entity.Property(e => e.UserAgent).HasMaxLength(500);
             entity.Property(e => e.SessionId).HasMaxLength(100);
             entity.Property(e => e.Metadata).HasMaxLength(2000);
+            entity.Property(e => e.SourceComponent).HasMaxLength(50);
             entity.Property(e => e.PreviousHash).HasMaxLength(64);
             entity.Property(e => e.RecordHash).HasMaxLength(64);
 

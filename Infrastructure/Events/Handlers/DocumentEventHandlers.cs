@@ -53,7 +53,7 @@ public class DocumentUploadAuditHandler : IDomainEventHandler<DocumentUploadedEv
             await _auditService.LogEventAsync(new AuditLog
             {
                 EventType = AuditEventTypes.DataModification,
-                Action = "UploadDocument",
+                Action = AuditActions.UploadDocument,
                 Username = domainEvent.UploadedByUsername,
                 ProjectId = null, // Would need project mapping
                 Result = AuditResults.Success,
@@ -167,7 +167,7 @@ public class DocumentUploadFailureHandler : IDomainEventHandler<DocumentUploadFa
             await _auditService.LogEventAsync(new AuditLog
             {
                 EventType = AuditEventTypes.DataModification,
-                Action = "UploadDocument",
+                Action = AuditActions.UploadDocument,
                 Username = domainEvent.UploadedByUsername,
                 ProjectId = null, // Would need project mapping
                 Result = AuditResults.Error,
