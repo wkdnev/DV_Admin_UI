@@ -260,7 +260,10 @@ apiClientBuilder.AddHttpMessageHandler<DV.Admin.UI.Security.TokenDelegatingHandl
 // ============================================================================
 // Authentication & Authorization
 // ============================================================================
-builder.Services.AddAuthentication(options =>
+var authMode = builder.Configuration["Auth:Mode"] ?? "ADFS";
+var isInternalAuth = authMode.Equals("Internal", StringComparison.OrdinalIgnoreCase);
+
+var authBuilder = builder.Services.AddAuthentication(options =>
 {
     options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
     // Use cookie scheme for challenge too - it will redirect to our login page
@@ -275,109 +278,107 @@ builder.Services.AddAuthentication(options =>
     // Redirect to our login choice page instead of triggering OIDC automatically
     options.LoginPath = "/auth/login";
     options.AccessDeniedPath = "/access-denied";
-})
-.AddOpenIdConnect(options =>
+});
+
+// Only register OIDC when Auth:Mode is ADFS (not Internal)
+if (!isInternalAuth)
 {
-    options.Authority = builder.Configuration["Adfs:Authority"];
-    options.MetadataAddress = builder.Configuration["Adfs:MetadataAddress"];
-    options.ClientId = builder.Configuration["Adfs:ClientId"];
-    options.ClientSecret = builder.Configuration["Adfs:ClientSecret"];
-    options.ResponseType = "code";
-    options.UsePkce = true;
-    options.SaveTokens = true;
-    
-    options.Scope.Clear();
-    var scopes = builder.Configuration["Api:Scopes"] ?? "openid profile";
-    foreach(var scope in scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+    authBuilder.AddOpenIdConnect(options =>
     {
-        options.Scope.Add(scope);
-    }
+        options.Authority = builder.Configuration["Adfs:Authority"];
+        options.MetadataAddress = builder.Configuration["Adfs:MetadataAddress"];
+        options.ClientId = builder.Configuration["Adfs:ClientId"];
+        options.ClientSecret = builder.Configuration["Adfs:ClientSecret"];
+        options.ResponseType = "code";
+        options.UsePkce = true;
+        options.SaveTokens = true;
+        
+        options.Scope.Clear();
+        var scopes = builder.Configuration["Api:Scopes"] ?? "openid profile";
+        foreach(var scope in scopes.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            options.Scope.Add(scope);
+        }
 
-    options.MapInboundClaims = false;
-    options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
-    {
-        // AD FS sends username in "unique_name" claim (format: AD\username)
-        NameClaimType = "unique_name",
-        RoleClaimType = "role"
-    };
+        options.MapInboundClaims = false;
+        options.TokenValidationParameters = new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+        {
+            // AD FS sends username in "unique_name" claim (format: AD\username)
+            NameClaimType = "unique_name",
+            RoleClaimType = "role"
+        };
 
-    // Request Windows Integrated Authentication from AD FS
-    // This tells AD FS to use the user's existing Kerberos/Windows credentials
-    options.Events = new Microsoft.AspNetCore.Authentication.OpenIdConnect.OpenIdConnectEvents
-    {
-        OnRedirectToIdentityProvider = context =>
+        // Request Windows Integrated Authentication from AD FS
+        options.Events = new Microsoft.AspNetCore.Authentication.OpenIdConnect.OpenIdConnectEvents
         {
-            // Request Windows authentication - AD FS will use Kerberos credentials
-            context.ProtocolMessage.SetParameter("wauth", "urn:federation:authentication:windows");
-            
-            // Optional: Add prompt=none to avoid any login UI if WIA is available
-            // context.ProtocolMessage.Prompt = "none";
-            
-            return Task.CompletedTask;
-        },
-        OnAuthenticationFailed = context =>
-        {
-            Console.WriteLine($"OIDC Auth Failed: {context.Exception?.Message}");
-            return Task.CompletedTask;
-        },
-        OnTokenValidated = async context =>
-        {
-            var principal = context.Principal;
-            Console.WriteLine($"=== OIDC Token Validated ===");
-            Console.WriteLine($"Identity Name: {principal?.Identity?.Name ?? "(null)"}");
-            Console.WriteLine($"Identity AuthType: {principal?.Identity?.AuthenticationType}");
-            Console.WriteLine($"Claims count: {principal?.Claims.Count() ?? 0}");
-            
-            if (principal?.Claims != null)
+            OnRedirectToIdentityProvider = context =>
             {
-                Console.WriteLine("All claims:");
-                foreach (var claim in principal.Claims)
-                {
-                    Console.WriteLine($"  {claim.Type} = {claim.Value}");
-                }
-            }
-
-            // Map 'groups' claims to 'role' claims to ensure AuthorizeView works with AD groups
-            if (principal?.Identity is ClaimsIdentity claimsIdentity)
+                context.ProtocolMessage.SetParameter("wauth", "urn:federation:authentication:windows");
+                return Task.CompletedTask;
+            },
+            OnAuthenticationFailed = context =>
             {
-                var groupClaims = principal.FindAll("groups").ToList();
-                foreach (var group in groupClaims)
+                Console.WriteLine($"OIDC Auth Failed: {context.Exception?.Message}");
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = async context =>
+            {
+                var principal = context.Principal;
+                Console.WriteLine($"=== OIDC Token Validated ===");
+                Console.WriteLine($"Identity Name: {principal?.Identity?.Name ?? "(null)"}");
+                Console.WriteLine($"Identity AuthType: {principal?.Identity?.AuthenticationType}");
+                Console.WriteLine($"Claims count: {principal?.Claims.Count() ?? 0}");
+                
+                if (principal?.Claims != null)
                 {
-                    // Add as role claim if not already present
-                    if (!claimsIdentity.HasClaim(c => c.Type == claimsIdentity.RoleClaimType && c.Value == group.Value))
+                    Console.WriteLine("All claims:");
+                    foreach (var claim in principal.Claims)
                     {
-                        claimsIdentity.AddClaim(new System.Security.Claims.Claim(claimsIdentity.RoleClaimType, group.Value));
-                        Console.WriteLine($"Mapped group '{group.Value}' to role claim");
+                        Console.WriteLine($"  {claim.Type} = {claim.Value}");
+                    }
+                }
+
+                // Map 'groups' claims to 'role' claims to ensure AuthorizeView works with AD groups
+                if (principal?.Identity is ClaimsIdentity claimsIdentity)
+                {
+                    var groupClaims = principal.FindAll("groups").ToList();
+                    foreach (var group in groupClaims)
+                    {
+                        if (!claimsIdentity.HasClaim(c => c.Type == claimsIdentity.RoleClaimType && c.Value == group.Value))
+                        {
+                            claimsIdentity.AddClaim(new System.Security.Claims.Claim(claimsIdentity.RoleClaimType, group.Value));
+                            Console.WriteLine($"Mapped group '{group.Value}' to role claim");
+                        }
+                    }
+                }
+
+                // Sync Global Admin Status
+                if (principal?.Identity?.Name != null)
+                {
+                    try
+                    {
+                        var userService = context.HttpContext.RequestServices.GetRequiredService<UserService>();
+                        var username = principal.Identity.Name;
+                        
+                        var isGlobalAdmin = principal.IsInRole("GlobalAdmin") || 
+                                            principal.IsInRole(Roles.GlobalAdminGroup) ||
+                                            principal.HasClaim(c => c.Type == "groups" && c.Value == Roles.GlobalAdminGroup);
+
+                        await userService.SyncGlobalAdminStatusAsync(username, isGlobalAdmin);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error syncing global admin status: {ex.Message}");
                     }
                 }
             }
-
-            // Sync Global Admin Status
-            if (principal?.Identity?.Name != null)
-            {
-                try
-                {
-                    // Create a scope to resolve scoped services
-                    // context.HttpContext.RequestServices is already scoped to the request
-                    var userService = context.HttpContext.RequestServices.GetRequiredService<UserService>();
-                    var username = principal.Identity.Name;
-                    
-                    var isGlobalAdmin = principal.IsInRole("GlobalAdmin") || 
-                                        principal.IsInRole(Roles.GlobalAdminGroup) ||
-                                        principal.HasClaim(c => c.Type == "groups" && c.Value == Roles.GlobalAdminGroup);
-
-                    await userService.SyncGlobalAdminStatusAsync(username, isGlobalAdmin);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error syncing global admin status: {ex.Message}");
-                }
-            }
-            
-            // return Task.CompletedTask; // Not needed if async
-        }
-    };
-});
+        };
+    });
+}
+else
+{
+    Console.WriteLine("*** AUTH MODE: Internal — AD FS / OIDC disabled, using local credentials only ***");
+}
 
 // Register custom policy provider for role-based authorization
 builder.Services.AddSingleton<IAuthorizationPolicyProvider, RoleBasedAuthorizationPolicyProvider>();

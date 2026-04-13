@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Mvc;
 using System.Net.Http;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
 using DV.Shared.Interfaces;
 
@@ -35,10 +36,20 @@ namespace DV.Admin.UI.Controllers
             {
                 return Redirect(returnUrl ?? "/");
             }
+
+            var authMode = _configuration["Auth:Mode"] ?? "ADFS";
+            var isInternalAuth = authMode.Equals("Internal", StringComparison.OrdinalIgnoreCase);
+
+            // In Internal mode, skip login choice and go straight to password login
+            if (isInternalAuth)
+            {
+                return Redirect($"/auth/login-password?returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
+            }
             
             // Show login choice view
             ViewData["ReturnUrl"] = returnUrl;
             ViewData["AdfsHost"] = GetAdfsHost();
+            ViewData["AuthMode"] = authMode;
             return View("LoginChoice");
         }
 
@@ -54,9 +65,18 @@ namespace DV.Admin.UI.Controllers
             {
                 return Redirect(returnUrl ?? "/");
             }
+
+            var authMode = _configuration["Auth:Mode"] ?? "ADFS";
+            var isInternalAuth = authMode.Equals("Internal", StringComparison.OrdinalIgnoreCase);
+
+            if (isInternalAuth)
+            {
+                return Redirect($"/auth/login-password?returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
+            }
             
             ViewData["ReturnUrl"] = returnUrl;
             ViewData["AdfsHost"] = GetAdfsHost();
+            ViewData["AuthMode"] = authMode;
             return View("LoginChoice");
         }
 
@@ -82,6 +102,12 @@ namespace DV.Admin.UI.Controllers
         [AllowAnonymous]
         public IActionResult LoginSso(string? returnUrl = "/")
         {
+            var authMode = _configuration["Auth:Mode"] ?? "ADFS";
+            if (authMode.Equals("Internal", StringComparison.OrdinalIgnoreCase))
+            {
+                return Redirect($"/auth/login-password?returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
+            }
+
             var properties = new AuthenticationProperties
             {
                 RedirectUri = returnUrl ?? "/",
@@ -102,6 +128,7 @@ namespace DV.Admin.UI.Controllers
             // Show the password entry form
             ViewData["Username"] = username;
             ViewData["ReturnUrl"] = returnUrl;
+            ViewData["AuthMode"] = _configuration["Auth:Mode"] ?? "ADFS";
             return View("PasswordLogin");
         }
 
@@ -118,6 +145,7 @@ namespace DV.Admin.UI.Controllers
                 ViewData["Error"] = "Username and password are required.";
                 ViewData["Username"] = username;
                 ViewData["ReturnUrl"] = returnUrl;
+                ViewData["AuthMode"] = _configuration["Auth:Mode"] ?? "ADFS";
                 return View("PasswordLogin");
             }
 
@@ -153,11 +181,41 @@ namespace DV.Admin.UI.Controllers
                     var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme, "unique_name", "role");
                     var principal = new ClaimsPrincipal(identity);
 
-                    await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, new AuthenticationProperties
+                    var authProps = new AuthenticationProperties
                     {
                         IsPersistent = false,
                         ExpiresUtc = DateTimeOffset.UtcNow.AddHours(8)
-                    });
+                    };
+
+                    // In Internal mode, acquire API JWT for subsequent API calls
+                    var loginAuthMode = _configuration["Auth:Mode"] ?? "ADFS";
+                    if (loginAuthMode.Equals("Internal", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            var apiBaseUrl = _configuration["Api:BaseUrl"] ?? "https://localhost:5002";
+                            var client = _httpClientFactory.CreateClient();
+                            var tokenRequestBody = new StringContent(
+                                JsonSerializer.Serialize(new { username, password }),
+                                Encoding.UTF8, "application/json");
+                            var tokenResponse = await client.PostAsync($"{apiBaseUrl}/api/auth/token", tokenRequestBody);
+                            if (tokenResponse.IsSuccessStatusCode)
+                            {
+                                var tokenData = JsonSerializer.Deserialize<JsonElement>(await tokenResponse.Content.ReadAsStringAsync());
+                                var apiToken = tokenData.GetProperty("access_token").GetString();
+                                if (!string.IsNullOrEmpty(apiToken))
+                                {
+                                    authProps.StoreTokens(new[] { new AuthenticationToken { Name = "access_token", Value = apiToken } });
+                                }
+                            }
+                        }
+                        catch (Exception tokenEx)
+                        {
+                            Console.WriteLine($"Warning: Could not acquire API token: {tokenEx.Message}");
+                        }
+                    }
+
+                    await HttpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, authProps);
 
                     Console.WriteLine($"=== Local Login Successful ===");
                     Console.WriteLine($"User: {localUser.Username} (ID: {localUser.UserId})");
@@ -168,7 +226,18 @@ namespace DV.Admin.UI.Controllers
             catch (Exception ex)
             {
                 Console.WriteLine($"Local credential check failed: {ex.Message}");
-                // Fall through to ROPC
+                // Fall through to ROPC (if ADFS mode)
+            }
+
+            // ── In Internal mode, local auth is the only option ──
+            var authMode = _configuration["Auth:Mode"] ?? "ADFS";
+            if (authMode.Equals("Internal", StringComparison.OrdinalIgnoreCase))
+            {
+                ViewData["Error"] = "Invalid username or password. Please try again.";
+                ViewData["Username"] = username;
+                ViewData["ReturnUrl"] = returnUrl;
+                ViewData["AuthMode"] = _configuration["Auth:Mode"] ?? "ADFS";
+                return View("PasswordLogin");
             }
 
             // ── Fall through to AD FS ROPC for domain users ──
@@ -216,6 +285,7 @@ namespace DV.Admin.UI.Controllers
                     ViewData["Error"] = "Invalid username or password. Please try again.";
                     ViewData["Username"] = username;
                     ViewData["ReturnUrl"] = returnUrl;
+                    ViewData["AuthMode"] = _configuration["Auth:Mode"] ?? "ADFS";
                     return View("PasswordLogin");
                 }
 
@@ -418,6 +488,7 @@ namespace DV.Admin.UI.Controllers
                 ViewData["Error"] = $"Authentication failed: {ex.Message}";
                 ViewData["Username"] = username;
                 ViewData["ReturnUrl"] = returnUrl;
+                ViewData["AuthMode"] = _configuration["Auth:Mode"] ?? "ADFS";
                 return View("PasswordLogin");
             }
         }
@@ -543,8 +614,15 @@ namespace DV.Admin.UI.Controllers
         /// </summary>
         [HttpGet("/logout-sso")]
         [HttpPost("/logout-sso")]
-        public IActionResult LogoutSso()
+        public async Task<IActionResult> LogoutSso()
         {
+            var authMode = _configuration["Auth:Mode"] ?? "ADFS";
+            if (authMode.Equals("Internal", StringComparison.OrdinalIgnoreCase))
+            {
+                await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                return Redirect("/auth/login");
+            }
+
             return SignOut(new AuthenticationProperties
             {
                 RedirectUri = "/login-choice"
