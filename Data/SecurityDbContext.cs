@@ -131,6 +131,8 @@ public class SecurityDbContext : DbContext
             entity.Property(e => e.UserAgent).HasMaxLength(500);
             entity.Property(e => e.SessionId).HasMaxLength(100);
             entity.Property(e => e.Metadata).HasMaxLength(2000);
+            entity.Property(e => e.PreviousHash).HasMaxLength(64);
+            entity.Property(e => e.RecordHash).HasMaxLength(64);
 
             // Indexes for performance
             entity.HasIndex(e => e.Timestamp)
@@ -150,6 +152,9 @@ public class SecurityDbContext : DbContext
 
             entity.HasIndex(e => new { e.Result, e.Timestamp })
                 .HasDatabaseName("IX_AuditLog_Result_Timestamp");
+
+            entity.HasIndex(e => e.RecordHash)
+                .HasDatabaseName("IX_AuditLog_RecordHash");
         });
 
         // Configure UserSession entity

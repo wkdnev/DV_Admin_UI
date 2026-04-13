@@ -1,6 +1,7 @@
 using DV.Admin.UI.Data;
 using DV.Shared.Security;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using System.Diagnostics;
@@ -276,28 +277,48 @@ public class AuditService
     }
 
     /// <summary>
-    /// Core method to log audit events
+    /// Core method to log audit events with NIST SP 800-53 AU-9(3) hash chaining
     /// </summary>
     public async Task LogEventAsync(AuditLog auditLog)
     {
         try
         {
-            // Use Information level instead of Debug to ensure we see these logs
             _logger.LogInformation("AUDIT DEBUG: Attempting to log audit event: {EventType}.{Action} for user {Username}", 
                 auditLog.EventType, auditLog.Action, auditLog.Username);
 
             // Enhance with HTTP context information
             EnhanceWithHttpContext(auditLog);
 
-            // Log the enhanced audit log details
             _logger.LogInformation("AUDIT DEBUG: Enhanced audit log - IP: {IpAddress}, SessionId: {SessionId}", 
                 auditLog.IpAddress, auditLog.SessionId);
 
-            // Save to database
-            _securityContext.AuditLogs.Add(auditLog);
-            
-            var savedChanges = await _securityContext.SaveChangesAsync();
-            _logger.LogInformation("AUDIT DEBUG: Audit event saved successfully. Changes saved: {SavedChanges}", savedChanges);
+            // NIST SP 800-53 AU-9(3): Hash chaining for cryptographic integrity
+            // Use advisory lock to serialize chain writes across all app instances
+            var strategy = _securityContext.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
+            {
+                using var transaction = await _securityContext.Database.BeginTransactionAsync();
+
+                // PostgreSQL advisory lock (key derived from NIST 800-53 AU-9(3))
+                await _securityContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(8053093)");
+
+                // Get the hash of the most recent audit record (the chain tip)
+                var previousHash = await _securityContext.AuditLogs
+                    .Where(al => al.RecordHash != null)
+                    .OrderByDescending(al => al.AuditLogId)
+                    .Select(al => al.RecordHash)
+                    .FirstOrDefaultAsync()
+                    ?? AuditLog.GenesisHash;
+
+                auditLog.PreviousHash = previousHash;
+                auditLog.RecordHash = ComputeRecordHash(auditLog);
+
+                _securityContext.AuditLogs.Add(auditLog);
+                await _securityContext.SaveChangesAsync();
+                await transaction.CommitAsync();
+            });
+
+            _logger.LogInformation("AUDIT DEBUG: Audit event saved successfully with hash chain. RecordHash: {Hash}", auditLog.RecordHash);
 
             // Also log to application logger for immediate visibility
             var logLevel = GetLogLevel(auditLog.Result);
@@ -311,7 +332,6 @@ public class AuditService
             _logger.LogError(ex, "AUDIT ERROR: Failed to write audit log for {EventType}.{Action} by {Username}. Error: {ErrorMessage}",
                 auditLog.EventType, auditLog.Action, auditLog.Username, ex.Message);
             
-            // Also log the full audit log details for debugging
             _logger.LogError("AUDIT ERROR: Failed audit log details: EventType={EventType}, Action={Action}, Username={Username}, Result={Result}, Details={Details}",
                 auditLog.EventType, auditLog.Action, auditLog.Username, auditLog.Result, auditLog.Details);
         }
@@ -467,6 +487,105 @@ public class AuditService
             AuditResults.Error => LogLevel.Error,
             _ => LogLevel.Information
         };
+    }
+
+    /// <summary>
+    /// Computes SHA-256 hash of an audit record's canonical fields + PreviousHash.
+    /// NIST SP 800-53 AU-9(3) cryptographic integrity.
+    /// </summary>
+    internal static string ComputeRecordHash(AuditLog log)
+    {
+        var payload = string.Join("|",
+            log.EventType,
+            log.Action,
+            log.Username,
+            log.UserId?.ToString() ?? "",
+            log.ProjectId?.ToString() ?? "",
+            log.DocumentId?.ToString() ?? "",
+            log.ResourceId ?? "",
+            log.Result,
+            log.Details ?? "",
+            log.IpAddress ?? "",
+            log.UserAgent ?? "",
+            log.SessionId ?? "",
+            log.Timestamp.ToString("O"),
+            log.DurationMs?.ToString() ?? "",
+            log.Metadata ?? "",
+            log.PreviousHash ?? "");
+
+        var hashBytes = SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(payload));
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Verifies the integrity of the audit log hash chain.
+    /// Returns (IsValid, FirstBrokenRecordId, TotalChecked).
+    /// Skips pre-hash-chaining records (null RecordHash).
+    /// NIST SP 800-53 AU-9(3) verification.
+    /// </summary>
+    public async Task<(bool IsValid, int? FirstBrokenId, int TotalChecked)> VerifyAuditChainIntegrityAsync(int? maxRecords = null)
+    {
+        var query = _securityContext.AuditLogs
+            .Where(al => al.RecordHash != null)
+            .OrderBy(al => al.AuditLogId)
+            .AsQueryable();
+
+        if (maxRecords.HasValue)
+        {
+            // Verify the most recent N records
+            query = _securityContext.AuditLogs
+                .Where(al => al.RecordHash != null)
+                .OrderByDescending(al => al.AuditLogId)
+                .Take(maxRecords.Value)
+                .OrderBy(al => al.AuditLogId);
+        }
+
+        var logs = await query.ToListAsync();
+        if (logs.Count == 0)
+            return (true, null, 0);
+
+        // For the first hashed record, determine its expected PreviousHash
+        string expectedPreviousHash;
+        if (maxRecords.HasValue)
+        {
+            // Look up the record immediately before our window
+            var firstId = logs[0].AuditLogId;
+            expectedPreviousHash = await _securityContext.AuditLogs
+                .Where(al => al.AuditLogId < firstId)
+                .OrderByDescending(al => al.AuditLogId)
+                .Select(al => al.RecordHash)
+                .FirstOrDefaultAsync()
+                ?? AuditLog.GenesisHash;
+        }
+        else
+        {
+            expectedPreviousHash = AuditLog.GenesisHash;
+        }
+
+        foreach (var log in logs)
+        {
+            // Verify chain linkage
+            if (log.PreviousHash != expectedPreviousHash)
+            {
+                _logger.LogWarning("AUDIT INTEGRITY: Chain break at AuditLogId {Id}. Expected PreviousHash {Expected}, found {Actual}",
+                    log.AuditLogId, expectedPreviousHash, log.PreviousHash);
+                return (false, log.AuditLogId, logs.Count);
+            }
+
+            // Verify record hash
+            var computedHash = ComputeRecordHash(log);
+            if (computedHash != log.RecordHash)
+            {
+                _logger.LogWarning("AUDIT INTEGRITY: Hash mismatch at AuditLogId {Id}. Expected {Expected}, found {Actual}",
+                    log.AuditLogId, computedHash, log.RecordHash);
+                return (false, log.AuditLogId, logs.Count);
+            }
+
+            expectedPreviousHash = log.RecordHash;
+        }
+
+        _logger.LogInformation("AUDIT INTEGRITY: Chain verification passed for {Count} records", logs.Count);
+        return (true, null, logs.Count);
     }
 }
 
