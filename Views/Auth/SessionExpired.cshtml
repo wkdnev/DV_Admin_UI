@@ -1,0 +1,58 @@
+@*
+    NIST SP 800-53 AC-12(03): Session Expired Notification
+    Displays when a session has timed out due to inactivity or absolute timeout.
+*@
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Session Expired - DocViewer Admin</title>
+    <link rel="stylesheet" href="/bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@@1.11.1/font/bootstrap-icons.css">
+    <style>
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            margin: 0;
+        }
+        .card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+        }
+        .card-icon {
+            font-size: 4rem;
+            color: #ffc107;
+            margin-bottom: 15px;
+            display: block;
+        }
+        h2 { color: #333; margin-bottom: 10px; }
+        .message { color: #6c757d; font-size: 1rem; margin-bottom: 25px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <i class="bi bi-clock-history card-icon"></i>
+        <h2>Session Expired</h2>
+        <p class="message">
+            Your session has expired due to inactivity. For security, all session data has been cleared.
+            Please sign in again to continue.
+        </p>
+        <a href="/auth/login" class="btn btn-primary btn-lg w-100">
+            <i class="bi bi-box-arrow-in-right me-2"></i>Sign In Again
+        </a>
+    </div>
+</body>
+</html>

@@ -19,13 +19,15 @@ namespace DV.Admin.UI.Controllers
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ICredentialService _credentialService;
         private readonly AuditService _auditService;
+        private readonly SessionManagementService _sessionService;
 
-        public AuthController(IConfiguration configuration, IHttpClientFactory httpClientFactory, ICredentialService credentialService, AuditService auditService)
+        public AuthController(IConfiguration configuration, IHttpClientFactory httpClientFactory, ICredentialService credentialService, AuditService auditService, SessionManagementService sessionService)
         {
             _configuration = configuration;
             _httpClientFactory = httpClientFactory;
             _credentialService = credentialService;
             _auditService = auditService;
+            _sessionService = sessionService;
         }
 
         /// <summary>
@@ -614,12 +616,56 @@ namespace DV.Admin.UI.Controllers
         public async Task<IActionResult> Logout()
         {
             var username = User.Identity?.Name ?? "Unknown";
+
+            // NIST SC-23(01): Terminate the server-side session record in DB
+            try
+            {
+                var sessionKey = HttpContext.Session?.Id;
+                if (!string.IsNullOrEmpty(sessionKey))
+                {
+                    await _sessionService.TerminateSessionAsync(sessionKey);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log but don't block logout
+                HttpContext.RequestServices.GetService<ILogger<AuthController>>()?.
+                    LogWarning(ex, "Failed to terminate DB session during logout for {Username}", username);
+            }
+
+            // NIST SC-23(01): Clear and abandon the ASP.NET session
+            HttpContext.Session?.Clear();
+
+            // Sign out the authentication cookie
             await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
 
             // NIST AU-2: Log logout event
             await _auditService.LogAuthenticationAsync(username, AuditActions.Logout, AuditResults.Success, "User logged out");
 
-            return Redirect("/login-choice");
+            // NIST AC-12(02): Redirect to explicit logout confirmation page
+            return Redirect("/auth/logged-out");
+        }
+
+        /// <summary>
+        /// NIST AC-12(02): Explicit logout confirmation page.
+        /// Displays a clear message that the session has ended.
+        /// </summary>
+        [HttpGet("/auth/logged-out")]
+        [AllowAnonymous]
+        public IActionResult LoggedOut()
+        {
+            return View("LoggedOut");
+        }
+
+        /// <summary>
+        /// NIST AC-12(03): Session expired page.
+        /// Shown when a session times out due to inactivity or absolute timeout.
+        /// </summary>
+        [HttpGet("/auth/session-expired")]
+        [AllowAnonymous]
+        public IActionResult SessionExpired()
+        {
+            return View("SessionExpired");
         }
 
         /// <summary>
