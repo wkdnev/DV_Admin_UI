@@ -153,6 +153,14 @@ public class RequestResponseLoggingMiddleware
         logBuilder.AppendLine($"RemoteIP: {GetClientIpAddress(context)}");
         logBuilder.AppendLine($"UserAgent: {request.Headers.UserAgent}");
 
+        // Log session ID for correlation with audit/session records
+        try
+        {
+            if (context.Session != null)
+                logBuilder.AppendLine($"SessionId: {context.Session.Id}");
+        }
+        catch { /* Session may not be available */ }
+
         // Log headers (excluding sensitive ones)
         if (_options.LogHeaders)
         {
