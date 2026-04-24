@@ -1,9 +1,10 @@
 @page "/sysadmin/session-management"
 @attribute [Authorize(Policy = "GlobalAdminOnly")]
+@using DV.Shared.Interfaces
 @using DV.Shared.Security
 @using DV.Shared.DTOs
 @using DV.Admin.UI.Services
-@inject SessionManagementService SessionManagementService
+@inject ISessionManagementService SessionManagementService
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
 @rendermode InteractiveServer

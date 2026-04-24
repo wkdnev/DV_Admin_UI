@@ -19,9 +19,9 @@ namespace DV.Admin.UI.Controllers
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ICredentialService _credentialService;
         private readonly AuditService _auditService;
-        private readonly SessionManagementService _sessionService;
+        private readonly ISessionManagementService _sessionService;
 
-        public AuthController(IConfiguration configuration, IHttpClientFactory httpClientFactory, ICredentialService credentialService, AuditService auditService, SessionManagementService sessionService)
+        public AuthController(IConfiguration configuration, IHttpClientFactory httpClientFactory, ICredentialService credentialService, AuditService auditService, ISessionManagementService sessionService)
         {
             _configuration = configuration;
             _httpClientFactory = httpClientFactory;

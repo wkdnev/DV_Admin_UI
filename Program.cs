@@ -200,7 +200,7 @@ builder.Services.AddTransient<ProjectRoleService>();  // Transient to avoid DbCo
 // Removed UserProjectAccessService
 // builder.Services.AddTransient<UserProjectAccessService>();
 builder.Services.AddScoped<AuditService>();
-builder.Services.AddScoped<SessionManagementService>();
+builder.Services.AddScoped<ISessionManagementService, SessionManagementService>();
 builder.Services.AddScoped<NotificationApiService>();
 builder.Services.AddScoped<GlobalAdminMigrationService>();
 builder.Services.AddScoped<ProjectRoleSeeder>();

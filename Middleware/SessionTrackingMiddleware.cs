@@ -1,4 +1,4 @@
-using DV.Admin.UI.Services;
+using DV.Shared.Interfaces;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace DV.Admin.UI.Middleware;
@@ -21,7 +21,7 @@ public class SessionTrackingMiddleware
         _logger = logger;
     }
 
-    public async Task InvokeAsync(HttpContext context, SessionManagementService sessionService, IMemoryCache memoryCache)
+    public async Task InvokeAsync(HttpContext context, ISessionManagementService sessionService, IMemoryCache memoryCache)
     {
         try
         {

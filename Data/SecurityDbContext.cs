@@ -21,8 +21,7 @@ public class SecurityDbContext : DbContext
     // REMOVED: public DbSet<ProjectRolePermission> ProjectRolePermissions => Set<ProjectRolePermission>(); - Permissions system removed
     // REMOVED: public DbSet<UserProjectAccess> UserProjectAccess => Set<UserProjectAccess>(); - Explicit Access removed
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
-    public DbSet<UserSession> UserSessions => Set<UserSession>();
-    public DbSet<SessionActivity> SessionActivities => Set<SessionActivity>();
+    // Session DbSets removed — session management delegated to DV_API
     public DbSet<UserCredential> UserCredentials => Set<UserCredential>();
     public DbSet<AccessGroup> AccessGroups => Set<AccessGroup>();
     public DbSet<AccessGroupMember> AccessGroupMembers => Set<AccessGroupMember>();
@@ -158,62 +157,7 @@ public class SecurityDbContext : DbContext
                 .HasDatabaseName("IX_AuditLog_RecordHash");
         });
 
-        // Configure UserSession entity
-        modelBuilder.Entity<UserSession>(entity =>
-        {
-            entity.ToTable("UserSession", "dbo");
-            entity.HasKey(e => e.SessionId);
-
-            entity.HasOne(e => e.User)
-                .WithMany()
-                .HasForeignKey(e => e.UserId)
-                .OnDelete(DeleteBehavior.SetNull);
-
-            entity.Property(e => e.SessionKey).IsRequired().HasMaxLength(100);
-            entity.Property(e => e.Username).IsRequired().HasMaxLength(255);
-            entity.Property(e => e.IpAddress).HasMaxLength(45);
-            entity.Property(e => e.UserAgent).HasMaxLength(500);
-            entity.Property(e => e.CurrentRole).HasMaxLength(50);
-            entity.Property(e => e.TerminatedBy).HasMaxLength(255);
-            entity.Property(e => e.Metadata).HasMaxLength(1000);
-
-            // Indexes for performance
-            entity.HasIndex(e => e.SessionKey)
-                .HasDatabaseName("IX_UserSession_SessionKey");
-
-            entity.HasIndex(e => new { e.UserId, e.IsActive })
-                .HasDatabaseName("IX_UserSession_User_Active");
-
-            entity.HasIndex(e => new { e.IsActive, e.ExpiresAt })
-                .HasDatabaseName("IX_UserSession_Active_Expires");
-
-            entity.HasIndex(e => e.LastActivity)
-                .HasDatabaseName("IX_UserSession_LastActivity");
-        });
-
-        // Configure SessionActivity entity
-        modelBuilder.Entity<SessionActivity>(entity =>
-        {
-            entity.ToTable("SessionActivity", "dbo");
-            entity.HasKey(e => e.ActivityId);
-
-            entity.HasOne(e => e.Session)
-                .WithMany()
-                .HasForeignKey(e => e.SessionId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.Property(e => e.ActivityType).IsRequired().HasMaxLength(50);
-            entity.Property(e => e.Action).HasMaxLength(100);
-            entity.Property(e => e.Resource).HasMaxLength(500);
-            entity.Property(e => e.Details).HasMaxLength(1000);
-
-            // Indexes for performance
-            entity.HasIndex(e => new { e.SessionId, e.Timestamp })
-                .HasDatabaseName("IX_SessionActivity_Session_Timestamp");
-
-            entity.HasIndex(e => new { e.ActivityType, e.Timestamp })
-                .HasDatabaseName("IX_SessionActivity_Type_Timestamp");
-        });
+        // UserSession and SessionActivity entity configuration removed — session management delegated to DV_API
 
         // Configure UserCredential entity (NIST SP 800-53 IA-5 compliant local auth)
         modelBuilder.Entity<UserCredential>(entity =>

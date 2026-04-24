@@ -1,4 +1,3 @@
-using DV.Admin.UI.Data;
 // ============================================================================
 // RoleBasedAuthorizationAttribute.cs - Role-Based Authorization Attribute
 // ============================================================================
@@ -20,9 +19,9 @@ using DV.Admin.UI.Data;
 // - Integrates with existing ASP.NET Core authorization pipeline
 // ============================================================================
 
+using DV.Shared.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -127,40 +126,24 @@ public class RoleBasedAuthorizationHandler : AuthorizationHandler<RoleBasedAutho
             // If role context not initialized, check session directly
             if (_roleContext.CurrentRole == null && _roleContext.UserRoles.Count == 0)
             {
-                _logger.LogInformation("Role context not initialized, checking database for user '{Username}'", username);
-                
-                // Query database directly for the user's most recent active session
-                // We can't use HttpContext.Session here because it's not available in authorization handlers
+                _logger.LogInformation("Role context not initialized, checking session API for user '{Username}'", username);
+
                 using var scope = _serviceProvider.CreateScope();
-                var securityContext = scope.ServiceProvider.GetRequiredService<SecurityDbContext>();
-                
-                // First, let's see how many sessions exist for this user
-                var allUserSessions = await securityContext.UserSessions
-                    .Where(s => s.Username == username)
-                    .OrderByDescending(s => s.LastActivity)
-                    .ToListAsync();
-                
-                _logger.LogInformation("Found {Count} total sessions for user '{Username}'", allUserSessions.Count, username);
-                
-                foreach (var session in allUserSessions.Take(3))
-                {
-                    _logger.LogInformation("Session: Key={Key}, IsActive={IsActive}, CurrentRole={Role}, LastActivity={LastActivity}", 
-                        session.SessionKey, session.IsActive, session.CurrentRole ?? "(null)", session.LastActivity);
-                }
-                
-                // Get the most recent active session for this user
-                var activeSession = await securityContext.UserSessions
-                    .Where(s => s.Username == username && s.IsActive)
-                    .OrderByDescending(s => s.LastActivity)
-                    .FirstOrDefaultAsync();
-                
-                _logger.LogInformation("Active session found in database: {Found}, Role: {Role}", 
+                var sessionService = scope.ServiceProvider.GetRequiredService<ISessionManagementService>();
+
+                var activeSessions = await sessionService.GetUserSessionsByUsernameAsync(username, activeOnly: true);
+
+                _logger.LogInformation("Found {Count} active sessions for user '{Username}'", activeSessions.Count, username);
+
+                var activeSession = activeSessions.FirstOrDefault();
+
+                _logger.LogInformation("Active session found: {Found}, Role: {Role}",
                     activeSession != null, activeSession?.CurrentRole ?? "(null)");
-                
+
                 if (activeSession != null && !string.IsNullOrEmpty(activeSession.CurrentRole))
                 {
                     currentRoleName = activeSession.CurrentRole;
-                    _logger.LogInformation("Found role '{Role}' in database session for user '{Username}'", currentRoleName, username);
+                    _logger.LogInformation("Found role '{Role}' in session for user '{Username}'", currentRoleName, username);
                 }
                 
                 // If no role found in session either, user needs to select a role
